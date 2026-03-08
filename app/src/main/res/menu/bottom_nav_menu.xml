@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/projects"
+        android:title="Projects"
+        android:icon="@drawable/ic_folder"/>
+    <item
+        android:id="@+id/clientDashboard"
+        android:title="Dashboard"
+        android:icon="@drawable/ic_dashboard">
+    </item>
+    <item
+        android:id="@+id/webui"
+        android:title="WebUI"
+        android:icon="@drawable/ic_web"/>
+    <item
+        android:id="@+id/nfc"
+        android:title="NFC Tool"
+        android:icon="@drawable/nfc"/>
+    <item
+        android:id="@+id/settings"
+        android:title="Settings"
+        android:icon="@drawable/ic_settings"/>
+</menu>

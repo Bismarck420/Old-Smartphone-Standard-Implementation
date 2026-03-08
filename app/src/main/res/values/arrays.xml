@@ -1,0 +1,12 @@
+<resources>
+    <!-- Reply Preference -->
+    <string-array name="device_entries">
+        <item>Host</item>
+        <item>Client</item>
+    </string-array>
+
+    <string-array name="device_values">
+        <item>host</item>
+        <item>client</item>
+    </string-array>
+</resources>

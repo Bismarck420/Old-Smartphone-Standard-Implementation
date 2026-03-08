@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.HostOSSI" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Customize your dark theme here. -->
+        <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
+        <item name="colorSecondary">@color/accent_color</item>
+        <item name="colorPrimary">@color/primary_color</item>
+        <item name="colorTertiary">@color/label_color</item>
+    </style>
+
+    <style name="Theme.HostOSSI" parent="Base.Theme.HostOSSI" />
+
+
+</resources>
