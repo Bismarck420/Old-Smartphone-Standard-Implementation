@@ -1,0 +1,26 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/general_title">
+
+        <ListPreference
+            app:defaultValue="host"
+            app:key="deviceMode"
+            app:title="@string/run_device_as_title"
+            app:entries="@array/device_entries"
+            app:entryValues="@array/device_values"
+            app:useSimpleSummaryProvider="true"/>
+
+        <EditTextPreference
+            app:key="client_IP"
+            app:title="@string/client_ip_title"
+            app:useSimpleSummaryProvider="true"
+            app:dependency="deviceMode"/>
+
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/theme_title">
+
+
+    </PreferenceCategory>
+
+</PreferenceScreen>

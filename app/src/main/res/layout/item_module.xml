@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/moduleCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <androidx.constraintlayout.widget.ConstraintLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:animateLayoutChanges="true">
+
+            <TextView
+                android:id="@+id/moduleTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:padding="16dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/verticalMenu">
+
+            </TextView>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/labelModuleType"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="16dp"
+            android:backgroundTint="@color/label_color"
+            app:strokeColor="@color/label_color"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toStartOf="@id/idLabelCard"
+            app:cardCornerRadius="4dp">
+            <ImageView
+                android:id="@+id/iconDisplay"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"/>
+        </com.google.android.material.card.MaterialCardView>
+
+            <ImageButton
+                android:id="@+id/verticalMenu"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="16dp"
+                app:srcCompat="@drawable/more_vert"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                app:tint="?android:attr/textColorSecondary">
+            </ImageButton>
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/idLabelCard"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_margin="16dp"
+                android:backgroundTint="@color/label_color"
+                app:strokeColor="@color/label_color"
+                app:layout_constraintStart_toEndOf="@id/moduleTitle"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/verticalMenu"
+                app:cardCornerRadius="4dp">
+                <TextView
+                    android:id="@+id/idLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="4dp"
+                    android:textSize="10sp"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="@id/verticalMenu" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+
+            <TextView
+                android:id="@+id/moduleDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:padding="16dp"
+                android:textSize="12sp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/idLabelCard">
+            </TextView>
+
+            <ImageButton
+                android:id="@+id/scanNFC"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone"
+                android:padding="16dp"
+                android:layout_margin="10dp"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintTop_toBottomOf="@+id/moduleDescription"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:srcCompat="@drawable/nfc"
+                android:backgroundTint="@color/primary_color">
+            </ImageButton>
+
+            <Button
+                android:id="@+id/selectSensor"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Select sensor"
+                android:visibility="gone"
+                android:layout_margin="16dp"
+                app:layout_constraintTop_toBottomOf="@id/moduleDescription"
+                app:layout_constraintEnd_toStartOf="@id/scanNFC"
+                app:layout_constraintBottom_toBottomOf="parent"
+                />
+
+
+        </androidx.constraintlayout.widget.ConstraintLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
