@@ -138,26 +138,29 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
         newProject.description = "Generic Project"
         itemProjectBinding.projectDescription.text = newProject.description
 
+        ProjectManager.projectList.add(newProject)
         lifecycleScope.launch (Dispatchers.IO){
             projectDao.insertProject(newProject)
+            Log.d("test", "addNewProject method")
         }
         setOnClickListeners(itemProjectBinding, newProject)
 
         binding.projectContainer.addView(itemProjectBinding.root)
-
     }
 
     fun updateUIfromDB() {
         ProjectManager.projectList.clear()
         Log.d("test", "entered updateUIfromDB")
         lifecycleScope.launch(Dispatchers.IO) {
-
             projectDao.getAll().collect { projects ->
                 Log.d("test", "This is the total amount of projects: " + projects.size.toString())
+                withContext(Dispatchers.Main){
+                    binding.projectContainer.removeAllViews()
+                }
                 for (myProject in projects) {
                     Log.d("test", "this project is called " + myProject.name)
-//                    ProjectManager.projectList.add(myProject)
-//
+                    ProjectManager.projectList.add(myProject)
+
                     val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
 
                     itemProjectBinding.projectTitle.text = myProject.name
@@ -172,10 +175,9 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 //                        itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
 //                    }
 //
-//                    setOnClickListeners(itemProjectBinding, myProject)
+                      setOnClickListeners(itemProjectBinding, myProject)
 //
                     withContext(Dispatchers.Main){
-                        setOnClickListeners(itemProjectBinding, myProject)
                         binding.projectContainer.addView(itemProjectBinding.root)
                     }
                     Log.d("test", "added project to view")
