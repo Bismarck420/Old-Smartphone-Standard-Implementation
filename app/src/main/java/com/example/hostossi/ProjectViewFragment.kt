@@ -216,6 +216,19 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             popupMenu.menu.add("Select Project")
             popupMenu.menu.add("Deselect Project")
 
+            popupMenu.menu.children.forEach {
+                if(it.title == "Select Project"){
+                    if(project.isSelectedProject){
+                        it.setVisible(false)
+                    }
+                }
+                else if(it.title == "Deselect Project"){
+                    if(project.isSelectedProject == false){
+                        it.setVisible(false)
+                    }
+                }
+            }
+
             popupMenu.setOnMenuItemClickListener { item ->
                 var menuText: String = item.title as String
 
@@ -233,39 +246,12 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     selectProject(project, itemProjectBinding, popupMenu)
 
 
-//
-
-//                    popupMenu.menu.children.forEach {
-//                        if(it.title == "Select Project") {
-//                            it.setVisible(false)
-//                        }
-//                        if(it.title == "Deselect Project"){
-//                            it.setVisible(true)
-//                        }
-//                    }
 //                    KtorServer.startClient(requireActivity())
                     true
                 }
                 else if(menuText =="Deselect Project"){
-                    deselectProject(project, itemProjectBinding, popupMenu)
-//                    itemProjectBinding.idProjectSelected.visibility = View.GONE
-//                    itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
-//                    project.isSelectedProject = false
-//                    lifecycleScope.launch (Dispatchers.IO){
-//                        projectDao.updateProject(project)
-//                        updateUIfromDB()
-//                    }
-//
-//                    ProjectManager.selectedProject = Project()
-//
-//                    popupMenu.menu.children.forEach {
-//                        if(it.title == "Select Project") {
-//                            it.setVisible(true)
-//                        }
-//                        if(it.title == "Deselect Project"){
-//                            it.setVisible(false)
-//                        }
-//                    }
+                    deselectProject(project, itemProjectBinding, popupMenu) //
+
                     true
                 }
                 else {
@@ -285,6 +271,15 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             projectDao.updateSelectedProject(selectedProject.id)
         }
 
+        popupMenu.menu.children.forEach {
+            if(it.title == "Select Project") {
+                it.setVisible(false)
+            }
+            if(it.title == "Deselect Project"){
+                it.setVisible(true)
+            }
+        }
+
         ProjectManager.selectedProject = selectedProject
         itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
         itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
@@ -296,6 +291,15 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             deselectedProject.isSelectedProject = false
             ProjectManager.selectedProject = Project()
             projectDao.updateProject(deselectedProject)
+        }
+
+        popupMenu.menu.children.forEach {
+            if(it.title == "Select Project") {
+                it.setVisible(true)
+            }
+            if(it.title == "Deselect Project"){
+                it.setVisible(false)
+            }
         }
     }
 }
