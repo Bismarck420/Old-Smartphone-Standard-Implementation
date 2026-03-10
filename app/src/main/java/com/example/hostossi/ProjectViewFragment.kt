@@ -162,21 +162,22 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     ProjectManager.projectList.add(myProject)
 
                     val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
-
                     itemProjectBinding.projectTitle.text = myProject.name
                     itemProjectBinding.projectDescription.text = myProject.description
-//                    if (myProject.isSelectedProject) {
-//                        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-//                        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-//                        ProjectManager.selectedProject = myProject
-//                    }
-//                    else if (myProject.isSelectedProject == false){
-//                        itemProjectBinding.idProjectSelected.visibility = View.GONE
-//                        itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
-//                    }
-//
-                      setOnClickListeners(itemProjectBinding, myProject)
-//
+
+                    //select project logic
+                    if (myProject.isSelectedProject) {
+                        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
+                        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
+                        ProjectManager.selectedProject = myProject
+                    }
+                    else if (myProject.isSelectedProject == false){
+                        itemProjectBinding.idProjectSelected.visibility = View.GONE
+                        itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
+                    }
+
+                    setOnClickListeners(itemProjectBinding, myProject)
+
                     withContext(Dispatchers.Main){
                         binding.projectContainer.addView(itemProjectBinding.root)
                     }
@@ -215,27 +216,10 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             popupMenu.menu.add("Select Project")
             popupMenu.menu.add("Deselect Project")
 
-            if(ProjectManager.selectedProject == project){
-                popupMenu.menu.children.forEach {
-                    if(it.title == "Select Project") {
-                        it.setVisible(false)
-                    }
-                }
-            }
-            else{
-                popupMenu.menu.children.forEach {
-                    if(it.title == "Deselect Project") {
-                        it.setVisible(false)
-                    }
-                }
-            }
-
             popupMenu.setOnMenuItemClickListener { item ->
                 var menuText: String = item.title as String
 
                 if (menuText == "Delete") {
-                    Log.d("test", "delete in updateui clicked")
-
                     binding.projectContainer.removeView(itemProjectBinding.root)
                     ProjectManager.projectList.remove(project)
                     lifecycleScope.launch(Dispatchers.IO) {
@@ -246,55 +230,42 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     // TODO: make title & description editable
                     true
                 } else if (menuText == "Select Project") {
-                    Log.d("test", "entered Select Project updateUIfromDB")
+                    selectProject(project, itemProjectBinding, popupMenu)
 
-                    itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-                    itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
 
-                    ProjectManager.selectedProject = project
+//
 
-                    lifecycleScope.launch(Dispatchers.IO){
-                        projectDao.getAll().collect { projects ->
-                            for(selectedProject in projects){
-                                if(selectedProject.isSelectedProject){
-                                    selectedProject.isSelectedProject = false
-                                    projectDao.updateProject(selectedProject)
-
-                                }
-                            }
-                        }
-                        project.isSelectedProject = true
-                        Log.d("test", project.toString())
-                        projectDao.updateProject(project)
-                    }
-
-                    popupMenu.menu.children.forEach {
-                        if(it.title == "Select Project") {
-                            it.setVisible(false)
-                        }
-                        if(it.title == "Deselect Project"){
-                            it.setVisible(true)
-                        }
-                    }
-                    KtorServer.startClient(requireActivity())
+//                    popupMenu.menu.children.forEach {
+//                        if(it.title == "Select Project") {
+//                            it.setVisible(false)
+//                        }
+//                        if(it.title == "Deselect Project"){
+//                            it.setVisible(true)
+//                        }
+//                    }
+//                    KtorServer.startClient(requireActivity())
                     true
                 }
                 else if(menuText =="Deselect Project"){
-                    itemProjectBinding.idProjectSelected.visibility = View.GONE
-                    itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
-                    project.isSelectedProject = false
-                    lifecycleScope.launch (Dispatchers.IO){ projectDao.updateProject(project) }
-
-                    ProjectManager.selectedProject = Project()
-
-                    popupMenu.menu.children.forEach {
-                        if(it.title == "Select Project") {
-                            it.setVisible(false)
-                        }
-                        if(it.title == "Deselect Project"){
-                            it.setVisible(true)
-                        }
-                    }
+                    deselectProject(project, itemProjectBinding, popupMenu)
+//                    itemProjectBinding.idProjectSelected.visibility = View.GONE
+//                    itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
+//                    project.isSelectedProject = false
+//                    lifecycleScope.launch (Dispatchers.IO){
+//                        projectDao.updateProject(project)
+//                        updateUIfromDB()
+//                    }
+//
+//                    ProjectManager.selectedProject = Project()
+//
+//                    popupMenu.menu.children.forEach {
+//                        if(it.title == "Select Project") {
+//                            it.setVisible(true)
+//                        }
+//                        if(it.title == "Deselect Project"){
+//                            it.setVisible(false)
+//                        }
+//                    }
                     true
                 }
                 else {
@@ -308,10 +279,23 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
     }
 
     fun selectProject(selectedProject : Project, itemProjectBinding: ItemProjectBinding, popupMenu: PopupMenu){
+        Log.d("test", "project selected")
+        lifecycleScope.launch (Dispatchers.IO){
+            selectedProject.isSelectedProject = true
+            projectDao.updateSelectedProject(selectedProject.id)
+        }
 
+        ProjectManager.selectedProject = selectedProject
+        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
+        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
     }
 
     fun deselectProject(deselectedProject : Project, itemProjectBinding: ItemProjectBinding, popupMenu: PopupMenu){
-
+        Log.d("test", "project deselected")
+        lifecycleScope.launch(Dispatchers.IO){
+            deselectedProject.isSelectedProject = false
+            ProjectManager.selectedProject = Project()
+            projectDao.updateProject(deselectedProject)
+        }
     }
 }
