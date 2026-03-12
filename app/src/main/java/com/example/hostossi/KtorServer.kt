@@ -45,11 +45,7 @@ import io.ktor.server.plugins.contentnegotiation.*
 
 object KtorServer {
 
-    public var isStarted = true
-    private var server: EmbeddedServer<NettyApplicationEngine, NettyApplicationEngine.Configuration> =
-        embeddedServer(Netty, port = 8080) {
-        }
-    private var client: HttpClient = HttpClient(CIO){
+    private var client: HttpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json()
         }
@@ -68,51 +64,62 @@ object KtorServer {
         if (serverJob != null) return
         val mDialog = ProgressDialog(context)
         serverJob = serverScope.launch {
-            try{
-                server.application.install(io.ktor.server.plugins.contentnegotiation.ContentNegotiation) {
-                    json()
-                }
+            try {
+                Log.d("test", "server started")
+                val server = embeddedServer(Netty, port = 8080) {
+                    install(io.ktor.server.plugins.contentnegotiation.ContentNegotiation) {
+                        json() // Nutzt kotlinx.serialization
+                    }
 
-                server.application.routing {
-                    get("/tasks") {
-                        var htmlContent: String = ""
-                        val myInputStream: InputStream
+                    // 2. Routing definieren
+                    routing {
+                        post("/selectedProject") {
+                            try {
+                                // WICHTIG: Deine Klasse "Project" muss @Serializable sein!
+                                val project = call.receive<Project>()
+                                ProjectManager.clientSelectedProject = project
+                                Log.d("test", ProjectManager.clientSelectedProject.toString())
+                                Log.d("test", "Project set: ${project.name}")
+                                Log.d("test", project.toString())
+                                call.respondText("selected Project received")
+                            } catch (e: Exception) {
+                                Log.e("test", "Mapping failed", e)
+                            }
+                        }
+                        get("/tasks") {
+                            var htmlContent: String = ""
+                            val myInputStream: InputStream
 
-                        try {
-                            myInputStream = context.assets.open("index.html")
-                            val size: Int = myInputStream.available()
-                            val buffer = ByteArray(size)
-                            myInputStream.read(buffer)
-                            htmlContent = String(buffer)
+                            try {
+                                myInputStream = context.assets.open("index.html")
+                                val size: Int = myInputStream.available()
+                                val buffer = ByteArray(size)
+                                myInputStream.read(buffer)
+                                htmlContent = String(buffer)
 
-                            call.respondText(htmlContent, ContentType.Text.Html)
-                        } catch (e: IOException) {
-                            // Exception
-                            e.printStackTrace()
+                                call.respondText(htmlContent, ContentType.Text.Html)
+                            } catch (e: IOException) {
+                                // Exception
+                                e.printStackTrace()
+                            }
+                        }
+                        get("/css/templatemo-crypto-dashboard.css") {
+                            val css = context.assets.open("css/templatemo-crypto-dashboard.css")
+                                .bufferedReader().use { it.readText() }
+                            call.respondText(css, ContentType.Text.CSS)
+                        }
+                        post("/sensorData") {
+                            val gson = Gson()
+                            val sensorData = call.receiveText()
+                            call.respondText { "sensor data received" }
                         }
                     }
-                    get("/css/templatemo-crypto-dashboard.css") {
-                        val css = context.assets.open("css/templatemo-crypto-dashboard.css").bufferedReader().use { it.readText() }
-                        call.respondText(css, ContentType.Text.CSS)
-                    }
+                }.start(wait = true)
+                Log.d("test", "server started")
 
-                    post("/payload") {
-                        val gson  = Gson()
-                        val project = call.receiveText()
-                        val projectObject = gson.fromJson(project, Project::class.java)
-                        ProjectManager.selectedProject = projectObject
-                        call.respondText { "payload received" }
-
-                    }
-                }
-
-                server.start(wait = true)
-            }catch(ex : Exception){
+            } catch (ex: Exception) {
                 Log.d("test", "failed to start server")
             }
-
-
-
         }
     }
 
@@ -123,28 +130,23 @@ object KtorServer {
         serverJob = null
     }
 
-    fun startClient(context: Context){
-        if(clientJob != null) return
-        clientJob = clientScope.launch {
-            try{
+    fun sendSelectedProject(context: Context) {
+        clientScope.launch {
+            try {
+                client.post("http://100.113.232.96:8080/selectedProject") {
+                    contentType(ContentType.Application.Json)
+                    setBody(ProjectManager.hostSelectedProject)
+                    Log.d("test", ProjectManager.hostSelectedProject.toString())
 
-                val gson : Gson = Gson()
-                val gsonProject = gson.toJson(ProjectManager.selectedProject)
-                val response: HttpResponse = client.post("http://100.113.232.96:8080/payload") {
-                    setBody(gsonProject)
                 }
-                Log.d("test", response.bodyAsText())
-            }catch(ex : Exception){
-                Log.d("test", "failed to connect to server")
+            } catch (ex: Exception) {
+                Log.e(
+                    "test",
+                    "Fehler beim Senden",
+                    ex
+                ) // ex zeigt dir genau, was kaputt ist!
             }
-
         }
-
-    }
-
-    fun stopClient(){
-        clientJob?.cancel()
-        clientJob = null
     }
 }
 

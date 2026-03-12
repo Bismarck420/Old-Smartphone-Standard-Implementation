@@ -91,6 +91,10 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         }
 
+        binding.swipeRefreshLayout.setOnRefreshListener {
+            synchronizeWithServer()
+            binding.swipeRefreshLayout.isRefreshing = false
+        }
     }
 
     override fun onCreateView(
@@ -169,7 +173,7 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     if (myProject.isSelectedProject) {
                         itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
                         itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-                        ProjectManager.selectedProject = myProject
+                        ProjectManager.hostSelectedProject = myProject
                     }
                     else if (myProject.isSelectedProject == false){
                         itemProjectBinding.idProjectSelected.visibility = View.GONE
@@ -181,6 +185,8 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     withContext(Dispatchers.Main){
                         binding.projectContainer.addView(itemProjectBinding.root)
                     }
+
+                    synchronizeWithServer()
                     Log.d("test", "added project to view")
 
                 }
@@ -245,8 +251,6 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                 } else if (menuText == "Select Project") {
                     selectProject(project, itemProjectBinding, popupMenu)
 
-
-//                    KtorServer.startClient(requireActivity())
                     true
                 }
                 else if(menuText =="Deselect Project"){
@@ -280,17 +284,21 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             }
         }
 
-        ProjectManager.selectedProject = selectedProject
+        ProjectManager.hostSelectedProject = selectedProject
         itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
         itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
+
+        synchronizeWithServer()
     }
 
     fun deselectProject(deselectedProject : Project, itemProjectBinding: ItemProjectBinding, popupMenu: PopupMenu){
         Log.d("test", "project deselected")
         lifecycleScope.launch(Dispatchers.IO){
             deselectedProject.isSelectedProject = false
-            ProjectManager.selectedProject = Project()
+            val emptyProject : Project = Project()
+            ProjectManager.hostSelectedProject = emptyProject
             projectDao.updateProject(deselectedProject)
+            synchronizeWithServer()
         }
 
         popupMenu.menu.children.forEach {
@@ -301,5 +309,9 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                 it.setVisible(false)
             }
         }
+    }
+
+    fun synchronizeWithServer(){
+        KtorServer.sendSelectedProject(requireContext())
     }
 }

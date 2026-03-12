@@ -9,6 +9,8 @@ import android.view.ViewGroup
 import com.example.hostossi.databinding.FragmentClientDashboardBinding
 import com.example.hostossi.databinding.FragmentProjectViewBinding
 import com.example.hostossi.databinding.ItemProjectBinding
+import com.nambimobile.widgets.efab.Label
+import kotlinx.coroutines.selects.select
 
 // TODO: Rename parameter arguments, choose names that match
 // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
@@ -27,6 +29,8 @@ class ClientDashboard : Fragment() {
     private var _binding: FragmentClientDashboardBinding? = null
     private val binding get() = _binding!!
 
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         arguments?.let {
@@ -41,18 +45,22 @@ class ClientDashboard : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         _binding = FragmentClientDashboardBinding.bind(view)
-        val itemProjectBinding = ItemProjectBinding.inflate(LayoutInflater.from(requireContext()), binding.dashboardContainer, false)
+        Log.d("test", ProjectManager.clientSelectedProject.toString())
 
-        itemProjectBinding.projectCard.id = View.generateViewId()
+        if(ProjectManager.clientSelectedProject.isSelectedProject){
+            binding.noProjectSelected.visibility = View.GONE
+            refreshDashboard()
+            Log.d("test", "selected project detected")
+        }
+        else{
+            binding.noProjectSelected.visibility = View.VISIBLE
+        }
 
-        itemProjectBinding.projectTitle.text = ProjectManager.selectedProject.name
-        itemProjectBinding.projectDescription.text = ProjectManager.selectedProject.description
-        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
+        binding.swipeRefreshLayout.setOnRefreshListener {
+            refreshDashboard()
+            binding.swipeRefreshLayout.isRefreshing = false
+        }
 
-
-        binding.dashboardContainer.addView(itemProjectBinding.root)
-
-        Log.d("test", "this happens in onViewCreated")
 
     }
 
@@ -71,6 +79,37 @@ class ClientDashboard : Fragment() {
         // 4. WICHTIG: Speicherleck verhindern!
         // Binding null setzen, wenn die View weg ist.
         _binding = null
+    }
+
+    fun setSelectedProject(){
+        val selectedProject = ItemProjectBinding.inflate(LayoutInflater.from(requireContext()), binding.dashboardContainer, false)
+
+        binding.selectedProjectContainer.removeAllViews()
+
+        selectedProject.projectCard.id = View.generateViewId()
+
+        selectedProject.projectTitle.text = ProjectManager.clientSelectedProject.name
+        selectedProject.projectDescription.text = ProjectManager.clientSelectedProject.description
+        selectedProject.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
+        selectedProject.verticalMenu.visibility = View.GONE
+
+        Log.d("test", selectedProject.toString())
+
+        binding.selectedProjectContainer.addView(selectedProject.root)
+    }
+
+    fun refreshDashboard(){
+        if(ProjectManager.clientSelectedProject.isSelectedProject){
+            Log.d("test", "project selected")
+            setSelectedProject()
+            binding.noProjectSelected.visibility = View.GONE
+        }
+        else if(ProjectManager.clientSelectedProject.isSelectedProject == false){
+            Log.d("test", "no project selected")
+            binding.noProjectSelected.visibility = View.VISIBLE
+            binding.selectedProjectContainer.removeAllViews()
+        }
+
     }
 
     companion object {

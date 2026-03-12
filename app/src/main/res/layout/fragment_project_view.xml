@@ -6,66 +6,75 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     tools:context=".ProjectViewFragment">
 
-    <LinearLayout
+    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+        android:id="@+id/swipeRefreshLayout"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:orientation="vertical"
-        android:layout_margin="16dp">
+        android:layout_height="match_parent">
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:layout_margin="16dp">
 
-            <TextView
-                android:id="@+id/projectTitle"
-                android:layout_width="wrap_content"
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="20sp"
-                android:text="OSSI Project viewer"
-                android:textStyle="bold"
-                android:layout_margin="16dp"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintStart_toStartOf="parent"/>
+                android:orientation="horizontal">
 
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/idDeviceModeCard"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                app:layout_constraintStart_toStartOf="@id/projectTitle"
-                app:layout_constraintTop_toTopOf="parent"
-                app:cardCornerRadius="4dp">
                 <TextView
-                    android:id="@+id/deviceMode"
+                    android:id="@+id/projectTitle"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_margin="4dp"
-                    android:textSize="10sp"
-                    app:layout_constraintTop_toTopOf="parent"/>
+                    android:textSize="20sp"
+                    android:text="OSSI Project viewer"
+                    android:textStyle="bold"
+                    android:layout_margin="16dp"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"/>
 
-            </com.google.android.material.card.MaterialCardView>
+                <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/idDeviceModeCard"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    app:layout_constraintStart_toStartOf="@id/projectTitle"
+                    app:layout_constraintTop_toTopOf="parent"
+                    app:cardCornerRadius="4dp">
+                    <TextView
+                        android:id="@+id/deviceMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_margin="4dp"
+                        android:textSize="10sp"
+                        app:layout_constraintTop_toTopOf="parent"/>
+
+                </com.google.android.material.card.MaterialCardView>
+
+            </LinearLayout>
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:layout_constraintTop_toBottomOf="@id/projectTitle"
+                app:layout_constraintBottom_toBottomOf="parent">
+
+                <LinearLayout
+                    android:id="@+id/projectContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:orientation="vertical"
+                    android:padding="8dp"
+                    android:animateLayoutChanges="true">
+
+                </LinearLayout>
+            </ScrollView>
 
         </LinearLayout>
 
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            app:layout_constraintTop_toBottomOf="@id/projectTitle"
-            app:layout_constraintBottom_toBottomOf="parent">
 
-            <LinearLayout
-                android:id="@+id/projectContainer"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:orientation="vertical"
-                android:padding="8dp"
-                android:animateLayoutChanges="true">
+    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-            </LinearLayout>
-        </ScrollView>
-
-    </LinearLayout>
 
     <com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
         android:text="Add Project"

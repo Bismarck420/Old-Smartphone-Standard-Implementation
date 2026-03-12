@@ -3,7 +3,8 @@ package com.example.hostossi
 object ProjectManager {
     val projectList = mutableListOf<Project>()
     var clientServerIP : String = ""
-    var selectedProject : Project = Project()
+    var hostSelectedProject : Project = Project()
+    var clientSelectedProject : Project = Project()
 
 
     fun findProject(id: String): Project? {

@@ -108,6 +108,6 @@ dependencies {
     implementation(libs.androidx.drawerlayout)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
 
-
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 
 }

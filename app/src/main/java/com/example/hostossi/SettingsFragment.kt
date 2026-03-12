@@ -73,6 +73,8 @@ class SettingsFragment : PreferenceFragmentCompat(),
                 val navView : BottomNavigationView = requireActivity().findViewById(R.id.bottomNavigationView)
 
                 if(newValue == "client"){
+                    ProjectManager.hostSelectedProject = Project()
+
                     navView.menu.findItem(R.id.clientDashboard).isVisible = true
                     navView.menu.findItem(R.id.projects).isVisible = false
                     val hostNamePref = findPreference<EditTextPreference>("client_IP")
@@ -81,7 +83,6 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     getOnBoardSensors()
 
                     KtorServer.startServer(requireActivity())
-                    KtorServer.stopClient()
 
                     //TODO add web server capabilities
                 }
@@ -92,7 +93,6 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     hostNamePref?.isEnabled = true
 
                     KtorServer.stopServer()
-                    KtorServer.startClient(requireContext())
                 }
             }
         }

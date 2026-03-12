@@ -90,10 +90,6 @@ class MainActivity : AppCompatActivity() {
             setCurrentFragment(dashboardFragment)
 
             KtorServer.startServer(this)
-            KtorServer.stopClient()
-
-
-
         }
         else{
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
@@ -101,10 +97,6 @@ class MainActivity : AppCompatActivity() {
             setCurrentFragment(projectViewFragment)
 
             KtorServer.stopServer()
-            KtorServer.startClient(this)
-
-
-
 
             Log.d("test", "i am now a host")
         }
@@ -120,145 +112,5 @@ class MainActivity : AppCompatActivity() {
             replace(R.id.flFragment, fragment)
             commit()
         }
-
-
-
-    fun updateUIfromDB(projects: List<Project>) {
-        projectViewBinding.projectContainer.removeAllViews()
-
-        for (project in projects) {
-            Log.d("updateUIfromDB", project.toString())
-
-            val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
-
-            itemProjectBinding.projectTitle.text = project.name
-            itemProjectBinding.projectDescription.text = project.description
-            if (project.isSelectedProject) {
-                itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-                itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-                ProjectManager.selectedProject = project
-
-                Log.d("test", "i got here")
-            }
-
-
-            itemProjectBinding.projectCard.setOnClickListener {
-                val visible = itemProjectBinding.projectDescription.visibility
-
-                if (visible == View.VISIBLE) {
-                    itemProjectBinding.projectDescription.visibility = View.GONE
-                    itemProjectBinding.openProjectButton.visibility = View.GONE
-                } else {
-                    itemProjectBinding.projectDescription.visibility = View.VISIBLE
-                    itemProjectBinding.openProjectButton.visibility = View.VISIBLE
-                }
-            }
-
-            itemProjectBinding.openProjectButton.setOnClickListener {
-                val intent = Intent(this, DetailActivity::class.java)
-
-                intent.putExtra("EXTRA_PROJECT_ID", project.id)
-                startActivity(intent)
-            }
-
-
-            itemProjectBinding.verticalMenu.setOnClickListener {
-                val popupMenu = PopupMenu(this, itemProjectBinding.verticalMenu)
-                popupMenu.menu.add("Delete")
-                popupMenu.menu.add("Edit")
-                popupMenu.menu.add("Select Project")
-                popupMenu.menu.add("Deselect Project")
-
-                if (ProjectManager.selectedProject == project) {
-                    popupMenu.menu.children.forEach {
-                        if (it.title == "Select Project") {
-                            it.setVisible(false)
-                        }
-                    }
-                } else {
-                    popupMenu.menu.children.forEach {
-                        if (it.title == "Deselect Project") {
-                            it.setVisible(false)
-                        }
-                    }
-                }
-
-                popupMenu.setOnMenuItemClickListener { item ->
-                    var menuText: String = item.title as String
-
-                    if (menuText == "Delete") {
-                        projectViewBinding.projectContainer.removeView(itemProjectBinding.root)
-                        ProjectManager.projectList.remove(project)
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            projectDao.delete(project)
-                        }
-                        true
-                    } else if (menuText == "Edit") {
-                        // TODO: make title & description editable
-                        true
-                    } else if (menuText == "Select Project") {
-                        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-                        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            for (project in ProjectManager.projectList) {
-                                project.isSelectedProject = false
-                                projectDao.updateProject(project)
-
-                                Log.d("test", project.isSelectedProject.toString())
-                            }
-                        }
-
-                        project.isSelectedProject = true
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            projectDao.updateProject(project)
-                        }
-
-
-                        ProjectManager.selectedProject = project
-
-                        popupMenu.menu.children.forEach {
-                            Log.d("test", it.toString())
-                            if (it.title == "Select Project") {
-                                it.setVisible(false)
-                            }
-                            if (it.title == "Deselect Project") {
-                                it.setVisible(true)
-                            }
-                        }
-                        KtorServer.startClient(this)
-
-                        true
-                    } else if (menuText == "Deselect Project") {
-                        itemProjectBinding.idProjectSelected.visibility = View.GONE
-                        itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
-                        project.isSelectedProject = false
-                        lifecycleScope.launch(Dispatchers.IO) { projectDao.updateProject(project) }
-
-                        ProjectManager.selectedProject = Project()
-
-                        popupMenu.menu.children.forEach {
-                            Log.d("test", it.toString())
-                            if (it.title == "Select Project") {
-                                it.setVisible(true)
-                            }
-                            if (it.title == "Deselect Project") {
-                                it.setVisible(false)
-                            }
-                        }
-
-                        true
-                    } else {
-                        false
-                    }
-
-                }
-
-                popupMenu.show()
-            }
-
-            projectViewBinding.projectContainer.addView(itemProjectBinding.root)
-        }
-    }
 }
 
