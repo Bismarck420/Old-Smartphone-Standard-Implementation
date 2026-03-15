@@ -78,7 +78,7 @@ class DetailActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO){
             moduleDao.getAll().collect { modules ->
                 withContext(Dispatchers.Main){
-                    updateUIfromDB(modules)
+                    updateUIfromDB()
                 }
                 Log.d("testSmall", "Entered collect!")
             }
@@ -94,13 +94,16 @@ class DetailActivity : AppCompatActivity() {
         return response
     }
 
-    fun addNewOnBoardModule(view: View) {
+    fun addNewGenericModule(view: View) {
+        Toast.makeText(this, "Generic Module added!", Toast.LENGTH_SHORT).show()
+
         val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
         itemModuleBinding.moduleCard.id = View.generateViewId()
 
         val genericModule = Module()
-        genericModule.moduleTitle = "empty OnBoard"
-        genericModule.description = "A new empty module Select a sensor from the client smartphone or scan an NFC Tag to use it."
+        genericModule.moduleTitle = "empty Generic"
+        genericModule.description = "A new empty module. Select a sensor from the client smartphone or scan an NFC Tag to fill data."
+        genericModule.moduleType = moduleType.GENERIC
         selectedProject?.moduleList?.add(genericModule)
 
         itemModuleBinding.moduleTitle.text = genericModule.moduleTitle
@@ -111,6 +114,81 @@ class DetailActivity : AppCompatActivity() {
 
         binding.moduleList.addView(itemModuleBinding.root)
 
+        addOnClickListeners(itemModuleBinding, genericModule)
+
+        lifecycleScope.launch(Dispatchers.IO){
+            moduleDao.insertModule(genericModule)
+            projectDao.updateProject(selectedProject!!)
+        }
+
+    }
+
+    fun addNewSwitchModule(view: View) {
+        Toast.makeText(this, "Switch Module added!", Toast.LENGTH_SHORT).show()
+
+        val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
+        itemModuleBinding.moduleCard.id = View.generateViewId()
+
+        val switchModule = Module()
+        switchModule.moduleTitle = "empty Switch"
+        switchModule.description = "A new empty switch module. Scan an NFC tag to connect the peripheral via bluetooth."
+        switchModule.moduleType = moduleType.SWITCH
+        selectedProject?.moduleList?.add(switchModule)
+
+        itemModuleBinding.moduleTitle.text = switchModule.moduleTitle
+        itemModuleBinding.moduleDescription.text = switchModule.description
+        itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
+        itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_switch)
+        itemModuleBinding.selectSensor.visibility = View.GONE
+
+
+        binding.moduleList.addView(itemModuleBinding.root)
+
+        addOnClickListeners(itemModuleBinding, switchModule)
+
+        lifecycleScope.launch(Dispatchers.IO){
+            moduleDao.insertModule(switchModule)
+            projectDao.updateProject(selectedProject!!)
+        }
+    }
+
+    fun updateUIfromDB(){
+
+        lifecycleScope.launch (Dispatchers.IO){
+            selectedProject!!.moduleList.clear()
+            binding.moduleList.removeAllViews()
+
+            moduleDao.getAll().collect { modules ->
+                for(module in modules) {
+                    selectedProject!!.moduleList.add(module)
+
+                    val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
+
+                    itemModuleBinding.moduleCard.id = View.generateViewId()
+                    itemModuleBinding.moduleTitle.text = module.moduleTitle
+                    itemModuleBinding.moduleDescription.text = module.description
+                    itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
+
+                    if(module.moduleType == moduleType.GENERIC)
+                        itemModuleBinding.iconDisplay.setImageResource(R.drawable.stacks)
+                    else if(module.moduleType == moduleType.SWITCH)
+                        itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_switch)
+
+                    module.peripheralList = peripheralDao.getAllPeripherals() as MutableList<Peripheral>
+
+                    withContext(Dispatchers.Main){
+                        binding.moduleList.addView(itemModuleBinding.root)
+                    }
+                    addOnClickListeners(itemModuleBinding, module)
+
+                }
+
+            }
+        }
+
+    }
+
+    fun addOnClickListeners(itemModuleBinding: ItemModuleBinding, genericModule: Module){
         itemModuleBinding.moduleCard.setOnClickListener {
             var visible = itemModuleBinding.moduleDescription.visibility
 
@@ -118,11 +196,12 @@ class DetailActivity : AppCompatActivity() {
                 itemModuleBinding.moduleDescription.visibility = View.GONE
                 itemModuleBinding.selectSensor.visibility = View.GONE
                 itemModuleBinding.scanNFC.visibility = View.GONE
+                itemModuleBinding.scanBluetooth.visibility = View.GONE
             } else {
                 itemModuleBinding.moduleDescription.visibility = View.VISIBLE
                 itemModuleBinding.selectSensor.visibility = View.VISIBLE
                 itemModuleBinding.scanNFC.visibility = View.VISIBLE
-
+                itemModuleBinding.scanBluetooth.visibility = View.VISIBLE
             }
         }
 
@@ -214,135 +293,9 @@ class DetailActivity : AppCompatActivity() {
                 }
             }
         }
-        //endregion
 
-        lifecycleScope.launch(Dispatchers.IO){
-            moduleDao.insertModule(genericModule)
-            projectDao.updateProject(selectedProject!!)
-        }
-
-    }
-
-    fun updateUIfromDB(projects: List<Module>){
-        val projectModules = selectedProject!!.moduleList
-
-        binding.moduleList.removeAllViews()
-
-        for(module in projectModules) {
-            val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
-
-            itemModuleBinding.moduleCard.id = View.generateViewId()
-            itemModuleBinding.moduleTitle.text = module.moduleTitle
-            itemModuleBinding.moduleDescription.text = module.description
-            itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
-            itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_pip)
-
-            binding.moduleList.addView(itemModuleBinding.root)
-
-            lifecycleScope.launch(Dispatchers.IO) {
-                module.peripheralList = peripheralDao.getAllPeripherals() as MutableList<Peripheral>
-            }
-
-            itemModuleBinding.moduleCard.setOnClickListener {
-                var visible = itemModuleBinding.moduleDescription.visibility
-
-                if (visible == View.VISIBLE) {
-                    itemModuleBinding.moduleDescription.visibility = View.GONE
-                    itemModuleBinding.selectSensor.visibility = View.GONE
-                    itemModuleBinding.scanNFC.visibility = View.GONE
-                } else {
-                    itemModuleBinding.moduleDescription.visibility = View.VISIBLE
-                    itemModuleBinding.selectSensor.visibility = View.VISIBLE
-                    itemModuleBinding.scanNFC.visibility = View.VISIBLE
-
-                }
-            }
-
-            itemModuleBinding.verticalMenu.setOnClickListener {
-                val popupMenu = PopupMenu(this@DetailActivity, itemModuleBinding.verticalMenu)
-                popupMenu.menu.add("Delete")
-                popupMenu.menu.add("Edit")
-                popupMenu.show()
-
-                popupMenu.setOnMenuItemClickListener { item ->
-                    var menuText: String = item.title as String
-
-                    if (menuText == "Delete") {
-                        binding.moduleList.removeView(itemModuleBinding.root)
-                        selectedProject!!.moduleList.remove(module)
-                        lifecycleScope.launch(Dispatchers.IO){
-                            moduleDao.delete(module)
-                            projectDao.updateProject(selectedProject!!)
-                        }
-                        true
-                    } else if (menuText == "Edit") {
-                        // TODO: make title & description editable
-                        true
-                    } else {
-                        false
-                    }
-                }
-
-            }
-//region onBoard sensor selection
-            itemModuleBinding.selectSensor.setOnClickListener {
-                lifecycleScope.launch {
-                    try {
-                        val sensors = fetchSensors()
-                        Log.d("Sensors", sensors.toString())
-                        Toast.makeText(this@DetailActivity, "Found sensors on client!", Toast.LENGTH_SHORT).show()
-
-                        sensorPopup.root.id = View.generateViewId()
-
-                        for (sensor in sensors) {
-                            val checkBox = CheckBox(this@DetailActivity)
-                            checkBox.text = sensor
-                            checkBox.id = View.generateViewId()
-                            sensorPopup.onBoardSensorContainer.addView(checkBox)
-
-                            checkBox.setOnCheckedChangeListener { button, bool ->
-                                if (bool) {
-                                    module.selectedPeripherals.add(Peripheral(peripheralName=checkBox.text.toString()))
-                                }
-                                else{
-                                    module.selectedPeripherals.remove(Peripheral(peripheralName=checkBox.text.toString()))
-                                }
-                            }
-
-                        }
-
-                        binding.root.addView(sensorPopup.root)
-                        val params = ConstraintLayout.LayoutParams(
-                            ConstraintLayout.LayoutParams.MATCH_PARENT,
-                            ConstraintLayout.LayoutParams.MATCH_PARENT
-                        )
-                        sensorPopup.root.layoutParams = params
-                        sensorPopup.root.visibility = View.VISIBLE
-
-                        sensorPopup.cancelButton.setOnClickListener {
-                            binding.root.removeView(sensorPopup.root)
-                            module.selectedPeripherals.clear()
-                        }
-                        sensorPopup.addSensorButton.setOnClickListener {
-                            //TODO: write logic for adding peripherals to module
-                            Toast.makeText(this@DetailActivity, "Added sensor to module!", Toast.LENGTH_SHORT).show()
-                            binding.root.removeView(sensorPopup.root)
-                            module.peripheralList = module.selectedPeripherals
-                            module.description += "\n" + module.selectedPeripherals.toString()
-                            itemModuleBinding.moduleDescription.text = module.description
-                            module.selectedPeripherals.clear()
-                        }
-
-
-
-                    } catch (e: Exception) {
-                        // Fehlerbehandlung (z.B. Timeout oder falsche IP)
-                        Toast.makeText(this@DetailActivity, "Failed to fetch sensors from client!", Toast.LENGTH_SHORT).show()
-                        Log.e("Error", "Failed to fetch sensors: ${e.message}")
-                    }
-                }
-            }
-            //endregion
+        itemModuleBinding.scanBluetooth.setOnClickListener {
+            Toast.makeText(this, "Bluetooth scan started!", Toast.LENGTH_SHORT).show()
         }
     }
 }
