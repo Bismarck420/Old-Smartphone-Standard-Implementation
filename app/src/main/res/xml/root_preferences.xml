@@ -16,6 +16,12 @@
             app:useSimpleSummaryProvider="true"
             app:dependency="deviceMode"/>
 
+        <Preference
+            app:key="scan_client"
+            app:title="@string/scan_client_title"
+            app:summary="@string/scan_client_summary"
+            app:dependency="deviceMode"/>
+
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/theme_title">

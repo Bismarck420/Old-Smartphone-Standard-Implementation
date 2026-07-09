@@ -2,6 +2,7 @@ package com.example.hostossi
 
 import android.app.ProgressDialog
 import android.content.Context
+import androidx.preference.PreferenceManager
 import android.util.Log
 import com.google.gson.Gson
 import io.ktor.client.HttpClient
@@ -86,6 +87,9 @@ object KtorServer {
                                 Log.e("test", "Mapping failed", e)
                             }
                         }
+                        get("/discovery") {
+                            call.respondText("hostossi-client")
+                        }
                         get("/tasks") {
                             var htmlContent: String = ""
                             val myInputStream: InputStream
@@ -133,7 +137,14 @@ object KtorServer {
     fun sendSelectedProject(context: Context) {
         clientScope.launch {
             try {
-                client.post("http://100.113.232.96:8080/selectedProject") {
+                val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+                val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
+                if (clientIpAddress.isBlank()) {
+                    Log.e("test", "Keine Client-IP konfiguriert")
+                    return@launch
+                }
+
+                client.post("http://$clientIpAddress:8080/selectedProject") {
                     contentType(ContentType.Application.Json)
                     setBody(ProjectManager.hostSelectedProject)
                     Log.d("test", ProjectManager.hostSelectedProject.toString())
