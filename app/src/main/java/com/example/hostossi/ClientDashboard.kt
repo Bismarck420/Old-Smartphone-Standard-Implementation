@@ -46,6 +46,7 @@ class ClientDashboard : Fragment() {
 
         _binding = FragmentClientDashboardBinding.bind(view)
         Log.d("test", ProjectManager.clientSelectedProject.toString())
+        binding.ipAddress.text = "IP-Address is: ${NetworkDiscovery.localIpv4Address() ?: "unknown"}"
 
         if(ProjectManager.clientSelectedProject.isSelectedProject){
             binding.noProjectSelected.visibility = View.GONE

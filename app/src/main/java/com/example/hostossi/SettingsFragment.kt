@@ -12,8 +12,11 @@ import android.view.View
 import android.webkit.WebView
 import android.widget.Button
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.content.ContextCompat.getSystemService
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
+import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
 import com.example.hostossi.databinding.ActivityMainBinding
@@ -27,6 +30,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import io.ktor.websocket.WebSocketDeflateExtension.Companion.install
+import kotlinx.coroutines.launch
 import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext.get
 
@@ -45,11 +49,18 @@ class SettingsFragment : PreferenceFragmentCompat(),
 
                 val hostNamePref = findPreference<EditTextPreference>("client_IP")
                 hostNamePref?.isEnabled = false
+                findPreference<Preference>("scan_client")?.isEnabled = false
 
             }
             else{
                 val hostNamePref = findPreference<EditTextPreference>("client_IP")
                 hostNamePref?.isEnabled = true
+                findPreference<Preference>("scan_client")?.isEnabled = true
+            }
+
+            findPreference<Preference>("scan_client")?.setOnPreferenceClickListener {
+                scanForClient()
+                true
             }
 
 
@@ -79,6 +90,7 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     navView.menu.findItem(R.id.projects).isVisible = false
                     val hostNamePref = findPreference<EditTextPreference>("client_IP")
                     hostNamePref?.isEnabled = false
+                    findPreference<Preference>("scan_client")?.isEnabled = false
 
                     getOnBoardSensors()
 
@@ -91,9 +103,36 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     navView.menu.findItem(R.id.projects).isVisible = true
                     val hostNamePref = findPreference<EditTextPreference>("client_IP")
                     hostNamePref?.isEnabled = true
+                    findPreference<Preference>("scan_client")?.isEnabled = true
 
                     KtorServer.stopServer()
                 }
+            }
+        }
+
+        private fun scanForClient() {
+            val scanPreference = findPreference<Preference>("scan_client")
+            scanPreference?.summary = "Scanning local network..."
+            scanPreference?.isEnabled = false
+
+            viewLifecycleOwner.lifecycleScope.launch {
+                val clientIpAddress = NetworkDiscovery.findClient()
+                scanPreference?.isEnabled = true
+
+                if (clientIpAddress == null) {
+                    scanPreference?.summary = "No client found"
+                    Toast.makeText(requireContext(), "No hostOSSI client found", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+
+                preferenceManager.sharedPreferences
+                    ?.edit()
+                    ?.putString("client_IP", clientIpAddress)
+                    ?.apply()
+
+                findPreference<EditTextPreference>("client_IP")?.text = clientIpAddress
+                scanPreference?.summary = "Found client at $clientIpAddress"
+                Toast.makeText(requireContext(), "Client found: $clientIpAddress", Toast.LENGTH_SHORT).show()
             }
         }
 

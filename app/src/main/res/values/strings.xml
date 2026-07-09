@@ -10,6 +10,8 @@
     <!-- Messages Preferences -->
     <string name="run_device_as_title">Run Device as</string>
     <string name="client_ip_title">Client IP Address</string>
+    <string name="scan_client_title">Scan for Client</string>
+    <string name="scan_client_summary">Find a client device in this network</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
 
