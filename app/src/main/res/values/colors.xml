@@ -10,5 +10,13 @@
     <color name="online_back_color">#388E3C</color>
     <color name="online_front_color">#81C784</color>
     <color name="selected_back_color">#002111</color>
+    <color name="generic_card_background">#373737</color>
+    <color name="generic_card_stroke">#373737</color>
+    <color name="generic_badge_background">#D8F2FF</color>
+    <color name="generic_badge_text">#005E7A</color>
+    <color name="switch_card_background">#373737</color>
+    <color name="switch_card_stroke">#373737</color>
+    <color name="switch_badge_background">#FFE3BA</color>
+    <color name="switch_badge_text">#8A4B00</color>
 
 </resources>

@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -21,6 +22,9 @@ interface ModuleDao {
     @Query("SELECT * FROM modules")
     fun getAll(): Flow<List<Module>>
 
+    @Query("SELECT * FROM modules WHERE id = :moduleId")
+    suspend fun getModuleById(moduleId: String): Module?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertModule(module: Module)
 
@@ -29,5 +33,9 @@ interface ModuleDao {
 
     @Delete
     suspend fun delete(module: Module)
+
+    @Transaction
+    @Query("SELECT * FROM modules WHERE id = :moduleID")
+    fun getModuleWithPeripherals(moduleID: String): Flow<ModuleWithPeripherals?>
 }
 

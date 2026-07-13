@@ -94,6 +94,7 @@ class SettingsFragment : PreferenceFragmentCompat(),
 
                     getOnBoardSensors()
 
+                    KtorServer.stopServer()
                     KtorServer.startServer(requireActivity())
 
                     //TODO add web server capabilities
@@ -105,6 +106,8 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     hostNamePref?.isEnabled = true
                     findPreference<Preference>("scan_client")?.isEnabled = true
 
+                    // Completely stop the server when switching to Host mode
+                    // Host mode uses local database and ProjectViewFragment instead of the WebUI/Server
                     KtorServer.stopServer()
                 }
             }

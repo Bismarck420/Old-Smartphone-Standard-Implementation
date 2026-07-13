@@ -11,8 +11,10 @@ import java.util.UUID
 @Serializable
 data class Peripheral(
     @PrimaryKey val peripheralID: String = UUID.randomUUID().toString(),
+    @ColumnInfo(name = "module_id") var moduleId: String = "",
     @ColumnInfo(name = "peripheral_name") var peripheralName: String = "",
     @ColumnInfo(name = "peripheral_type") var peripheralType: String = "",
     @ColumnInfo(name = "connection_type") var connectionType: String = "",
-    @ColumnInfo(name="peripheral_description") var peripheralDescription: String = ""
+    @ColumnInfo(name="peripheral_description") var peripheralDescription: String = "",
+    @ColumnInfo(name="ip_address") var ipAddress: String = ""
 )

@@ -19,6 +19,9 @@ interface PeripheralDao {
     @Query("DELETE FROM peripherals")
     suspend fun deleteAll()
 
+    @Query("SELECT * FROM peripherals WHERE module_id = :moduleId")
+    suspend fun getPeripheralsForModule(moduleId: String): List<Peripheral>
+
     @Update
     suspend fun updatePeripheral(peripheral: Peripheral)
 
