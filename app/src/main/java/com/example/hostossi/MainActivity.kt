@@ -9,6 +9,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
@@ -32,6 +33,15 @@ class MainActivity : AppCompatActivity() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val themeValue = sharedPreferences.getString("theme_mode", "system")
+        val mode = when (themeValue) {
+            "light" -> AppCompatDelegate.MODE_NIGHT_NO
+            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        AppCompatDelegate.setDefaultNightMode(mode)
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -76,12 +86,10 @@ class MainActivity : AppCompatActivity() {
         // set up Fragments
         val settingsFragment = SettingsFragment()
         val projectViewFragment = ProjectViewFragment()
-        val nfcFragment = NFCTool()
         val webUIFragment = WebUI()
         val dashboardFragment = ClientDashboard()
 
         // get settings
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         val name = sharedPreferences.getString("deviceMode", "")
 
         // database functionality
@@ -93,26 +101,29 @@ class MainActivity : AppCompatActivity() {
             when (it.itemId) {
                 R.id.projects -> setCurrentFragment(projectViewFragment)
                 R.id.settings -> setCurrentFragment(settingsFragment)
-                R.id.nfc -> setCurrentFragment(nfcFragment)
                 R.id.webui -> setCurrentFragment(webUIFragment)
                 R.id.clientDashboard -> setCurrentFragment(dashboardFragment)
             }
             true
         }
-        Log.d("test", "this happened on install")
 
         if(name == "client"){
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = true
             bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
-            bottomNavigationView.menu.findItem(R.id.clientDashboard).isChecked = true
-            setCurrentFragment(dashboardFragment)
+            
+            if (savedInstanceState == null) {
+                bottomNavigationView.selectedItemId = R.id.clientDashboard
+            }
 
             KtorServer.startServer(this)
         }
         else{
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
             bottomNavigationView.menu.findItem(R.id.projects).isVisible = true
-            setCurrentFragment(projectViewFragment)
+            
+            if (savedInstanceState == null) {
+                bottomNavigationView.selectedItemId = R.id.projects
+            }
 
             // When in Host mode, we don't need the local dashboard server running
             KtorServer.stopServer()

@@ -15,10 +15,6 @@
         android:title="WebUI"
         android:icon="@drawable/ic_web"/>
     <item
-        android:id="@+id/nfc"
-        android:title="NFC Tool"
-        android:icon="@drawable/nfc"/>
-    <item
         android:id="@+id/settings"
         android:title="Settings"
         android:icon="@drawable/ic_settings"/>

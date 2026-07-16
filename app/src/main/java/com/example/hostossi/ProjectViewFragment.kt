@@ -155,7 +155,7 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             } catch (e: Exception) {
                 Log.e("ProjectView", "Failed to add new project", e)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(requireContext(), "Error saving project", android.widget.Toast.LENGTH_SHORT).show()
+                    SnackbarUtils.showModernSnackbar(binding.root, "Error saving project", anchorView = binding.btnAddnewProjectButton)
                 }
             }
         }
@@ -199,7 +199,7 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             } catch (e: Exception) {
                 Log.e("ProjectView", "Failed to update UI from DB", e)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(requireContext(), "Database error", android.widget.Toast.LENGTH_SHORT).show()
+                    SnackbarUtils.showModernSnackbar(binding.root, "Database error", anchorView = binding.btnAddnewProjectButton)
                 }
             }
         }

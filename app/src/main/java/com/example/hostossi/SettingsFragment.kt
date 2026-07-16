@@ -13,6 +13,7 @@ import android.webkit.WebView
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat.getSystemService
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
@@ -110,7 +111,19 @@ class SettingsFragment : PreferenceFragmentCompat(),
                     // Host mode uses local database and ProjectViewFragment instead of the WebUI/Server
                     KtorServer.stopServer()
                 }
+            } else if (key == "theme_mode") {
+                val themeValue = sharedPreferences.getString(key, "system")
+                applyTheme(themeValue)
             }
+        }
+
+        private fun applyTheme(themeValue: String?) {
+            val mode = when (themeValue) {
+                "light" -> AppCompatDelegate.MODE_NIGHT_NO
+                "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+                else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            }
+            AppCompatDelegate.setDefaultNightMode(mode)
         }
 
         private fun scanForClient() {
@@ -122,9 +135,11 @@ class SettingsFragment : PreferenceFragmentCompat(),
                 val clientIpAddress = NetworkDiscovery.findClient()
                 scanPreference?.isEnabled = true
 
+                val navView: BottomNavigationView? = activity?.findViewById(R.id.bottomNavigationView)
+
                 if (clientIpAddress == null) {
                     scanPreference?.summary = "No client found"
-                    Toast.makeText(requireContext(), "No hostOSSI client found", Toast.LENGTH_SHORT).show()
+                    SnackbarUtils.showModernSnackbar(requireView(), "No hostOSSI client found", anchorView = navView)
                     return@launch
                 }
 
@@ -135,7 +150,7 @@ class SettingsFragment : PreferenceFragmentCompat(),
 
                 findPreference<EditTextPreference>("client_IP")?.text = clientIpAddress
                 scanPreference?.summary = "Found client at $clientIpAddress"
-                Toast.makeText(requireContext(), "Client found: $clientIpAddress", Toast.LENGTH_SHORT).show()
+                SnackbarUtils.showModernSnackbar(requireView(), "Client found: $clientIpAddress", anchorView = navView)
             }
         }
 

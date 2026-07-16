@@ -13,14 +13,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.PopupMenu
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.constraintlayout.widget.ConstraintLayout
-import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -29,7 +25,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.example.hostossi.databinding.ActivityDetailBinding
 import com.example.hostossi.databinding.ItemModuleBinding
-import com.example.hostossi.databinding.SensorPopupBinding
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.chip.Chip
+import com.google.android.material.snackbar.Snackbar
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -45,7 +43,6 @@ import kotlinx.serialization.json.*
 class DetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDetailBinding
-    private lateinit var sensorPopup: SensorPopupBinding
     private var selectedProject : Project?=null
     private var selectedProjectId: String? = null
     private val client = HttpClient(CIO) {
@@ -63,7 +60,6 @@ class DetailActivity : AppCompatActivity() {
         enableEdgeToEdge()
 
         binding = ActivityDetailBinding.inflate(layoutInflater)
-        sensorPopup = SensorPopupBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
@@ -102,7 +98,7 @@ class DetailActivity : AppCompatActivity() {
     }
 
     fun addNewGenericModule(view: View) {
-        Toast.makeText(this, "Generic Module added!", Toast.LENGTH_SHORT).show()
+        SnackbarUtils.showModernSnackbar(binding.root, "Generic Module added!", anchorView = binding.expandableFab)
 
         val genericModule = Module()
         genericModule.moduleTitle = "empty Generic"
@@ -118,7 +114,7 @@ class DetailActivity : AppCompatActivity() {
     }
 
     fun addNewSwitchModule(view: View) {
-        Toast.makeText(this, "Switch Module added!", Toast.LENGTH_SHORT).show()
+        SnackbarUtils.showModernSnackbar(binding.root, "Switch Module added!", anchorView = binding.expandableFab)
 
         val switchModule = Module()
         switchModule.moduleTitle = "empty Switch"
@@ -281,67 +277,92 @@ class DetailActivity : AppCompatActivity() {
                     val sensors = fetchSensors()
                     Log.d("Sensors", sensors.toString())
                     if (sensors.isEmpty()) {
-                        Toast.makeText(this@DetailActivity, "No sensors found. Check client connection.", Toast.LENGTH_SHORT).show()
+                        SnackbarUtils.showModernSnackbar(binding.root, "No sensors found. Check client connection.", anchorView = binding.expandableFab)
                         return@launch
                     }
-                    Toast.makeText(this@DetailActivity, "Found sensors on client!", Toast.LENGTH_SHORT).show()
-
-                    sensorPopup.root.id = View.generateViewId()
-
-                    for (sensor in sensors) {
-                        val checkBox = CheckBox(this@DetailActivity)
-                        checkBox.text = sensor
-                        checkBox.id = View.generateViewId()
-                        sensorPopup.onBoardSensorContainer.addView(checkBox)
-
-                        checkBox.setOnCheckedChangeListener { button, bool ->
-                            if (bool) {
-                                val Peripheral = Peripheral(peripheralName=checkBox.text.toString())
-                                genericModule.selectedPeripherals.add(Peripheral)
-                                lifecycleScope.launch(Dispatchers.IO){
-                                    peripheralDao.insertPeripheral(Peripheral)
-                                }
-                            }
-                            else{
-                                genericModule.selectedPeripherals.remove(Peripheral(peripheralName=checkBox.text.toString()))
-                                lifecycleScope.launch(Dispatchers.IO){
-                                    peripheralDao.deletePeripheral(Peripheral(peripheralName=checkBox.text.toString()))
-                                }
-
-                            }
-                        }
-
-                    }
-
-                    binding.root.addView(sensorPopup.root)
-                    val params = ConstraintLayout.LayoutParams(
-                        ConstraintLayout.LayoutParams.MATCH_PARENT,
-                        ConstraintLayout.LayoutParams.MATCH_PARENT
-                    )
-                    sensorPopup.root.layoutParams = params
-                    sensorPopup.root.visibility = View.VISIBLE
-
-                    sensorPopup.cancelButton.setOnClickListener {
-                        binding.root.removeView(sensorPopup.root)
-                        genericModule.selectedPeripherals.clear()
-                    }
-                    sensorPopup.addSensorButton.setOnClickListener {
-                        //TODO: write logic for adding peripherals to module
-                        Toast.makeText(this@DetailActivity, "Added sensor to module!", Toast.LENGTH_SHORT).show()
-                        binding.root.removeView(sensorPopup.root)
-                        genericModule.peripheralList = genericModule.selectedPeripherals
-                        genericModule.description += "\n" + genericModule.selectedPeripherals.toString()
-                        itemModuleBinding.moduleDescription.text = genericModule.description
-                        genericModule.selectedPeripherals.clear()
-                    }
+                    showSensorSelectionBottomSheet(sensors, genericModule, itemModuleBinding)
 
                 } catch (e: Exception) {
-                    // Fehlerbehandlung (z.B. Timeout oder falsche IP)
-                    Toast.makeText(this@DetailActivity, "Failed to fetch sensors from client!", Toast.LENGTH_SHORT).show()
+                    SnackbarUtils.showModernSnackbar(binding.root, "Failed to fetch sensors: ${e.localizedMessage}", anchorView = binding.expandableFab)
                     Log.e("Error", "Failed to fetch sensors: ${e.message}")
                 }
             }
         }
+    }
+
+    private fun showSensorSelectionBottomSheet(
+        sensors: List<String>,
+        module: Module,
+        itemModuleBinding: ItemModuleBinding
+    ) {
+        val bottomSheetDialog = BottomSheetDialog(this)
+        val view = layoutInflater.inflate(R.layout.bottom_sheet_sensor_selection, binding.root, false)
+        bottomSheetDialog.setContentView(view)
+
+        val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.sensorChipGroup)
+        val btnAdd = view.findViewById<android.widget.Button>(R.id.btnAddSensors)
+        val btnCancel = view.findViewById<android.widget.Button>(R.id.btnCancel)
+
+        // Pre-fill with existing peripherals
+        val selectedTempPeripherals = module.peripheralList.toMutableList()
+
+        sensors.forEach { sensorName ->
+            val chip = Chip(this).apply {
+                text = sensorName
+                isCheckable = true
+                isCheckedIconVisible = true
+                
+                // Colors
+                val selectedColor = ContextCompat.getColor(this@DetailActivity, R.color.accent_color)
+                val unselectedColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_background)
+                val textColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_text)
+                
+                chipBackgroundColor = android.content.res.ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(selectedColor, unselectedColor)
+                )
+                setTextColor(textColor)
+
+                // Initial state
+                if (selectedTempPeripherals.any { it.peripheralName == sensorName }) {
+                    isChecked = true
+                }
+
+                setOnCheckedChangeListener { _, isChecked ->
+                    if (isChecked) {
+                        if (selectedTempPeripherals.none { it.peripheralName == sensorName }) {
+                            selectedTempPeripherals.add(Peripheral(peripheralName = sensorName, moduleId = module.id))
+                        }
+                    } else {
+                        selectedTempPeripherals.removeAll { it.peripheralName == sensorName }
+                    }
+                }
+            }
+            chipGroup.addView(chip)
+        }
+
+        btnCancel.setOnClickListener { bottomSheetDialog.dismiss() }
+
+        btnAdd.setOnClickListener {
+            lifecycleScope.launch(Dispatchers.IO) {
+                // Clear old and add new selection
+                // In a real scenario, you might want to diff this, but for now we replace
+                selectedTempPeripherals.forEach { 
+                    peripheralDao.insertPeripheral(it)
+                }
+                
+                withContext(Dispatchers.Main) {
+                    module.peripheralList = selectedTempPeripherals
+                    module.description = "Sensors: " + selectedTempPeripherals.joinToString { it.peripheralName }
+                    itemModuleBinding.moduleDescription.text = module.description
+                    
+                    SnackbarUtils.showModernSnackbar(binding.root, "Added ${selectedTempPeripherals.size} sensors!", anchorView = binding.expandableFab)
+                    bottomSheetDialog.dismiss()
+                }
+            }
+        }
+
+        bottomSheetDialog.show()
     }
 
     private fun setModuleActionsVisible(

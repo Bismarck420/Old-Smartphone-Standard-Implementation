@@ -10,9 +10,9 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.ProgressBar
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
@@ -21,12 +21,12 @@ import com.example.hostossi.databinding.FragmentWebUIBinding
 private const val ARG_PARAM1 = "param1"
 private const val ARG_PARAM2 = "param2"
 
-private var _binding: FragmentWebUIBinding? = null
-private val binding get() = _binding!!
-
 class WebUI : Fragment() {
     private var param1: String? = null
     private var param2: String? = null
+    
+    private var _binding: FragmentWebUIBinding? = null
+    private val binding get() = _binding!!
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,64 +46,66 @@ class WebUI : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
         _binding = FragmentWebUIBinding.bind(view)
+        
+        setupWebView()
+        refreshWebUI()
+    }
 
-        // Ensure the internal server is synced with the latest data from the database
-        // so the dashboard reflects the current state immediately on load.
-        KtorServer.syncProjectsToClient(requireContext())
-
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireActivity())
-        val ipAddressKey = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-        val deviceMode = sharedPreferences.getString("deviceMode", "default")
-
+    private fun setupWebView() {
         val myWebView: WebView = binding.webRenderer
-        val progressBar: ProgressBar? = view.findViewById(R.id.webViewProgressBar)
+        
+        myWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            cacheMode = WebSettings.LOAD_NO_CACHE
+        }
+
+        // Add Javascript interface for reliable retry
+        myWebView.addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun retry() {
+                requireActivity().runOnUiThread {
+                    Log.d("WebUI", "Retry triggered via JS interface")
+                    refreshWebUI()
+                }
+            }
+        }, "AndroidBridge")
 
         myWebView.webViewClient = object : WebViewClient() {
             private var hasError = false
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                hasError = false
-                progressBar?.isVisible = true
+                
+                // Only show the native spinner for actual web/network URLs
+                // This keeps it off the local error page and 'about:blank'
+                if (url != null && (url.startsWith("http://") || url.startsWith("https://"))) {
+                    hasError = false
+                    if (_binding != null) {
+                        binding.webViewProgressBar.isVisible = true
+                    }
+                }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                if (!hasError) {
-                    progressBar?.isVisible = false
+                
+                // Hide the native spinner whenever any page load finishes (success or error page)
+                if (_binding != null) {
+                    binding.webViewProgressBar.isVisible = false
                 }
             }
 
-            // Legacy error handling
-            override fun onReceivedError(
-                view: WebView?,
-                errorCode: Int,
-                description: String?,
-                failingUrl: String?
-            ) {
-                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
-                    handleError(view, description ?: "Unknown error")
-                }
-            }
-
-            // Modern error handling
-            override fun onReceivedError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                error: WebResourceError?
-            ) {
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                 if (request?.isForMainFrame == true) {
                     handleError(view, error?.description?.toString() ?: "Connection failed")
                 }
             }
 
-            override fun onReceivedHttpError(
-                view: WebView?,
-                request: WebResourceRequest?,
-                errorResponse: WebResourceResponse?
-            ) {
+            override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
                 if (request?.isForMainFrame == true) {
                     handleError(view, "Server error: ${errorResponse?.statusCode}")
                 }
@@ -112,36 +114,86 @@ class WebUI : Fragment() {
             private fun handleError(view: WebView?, message: String) {
                 hasError = true
                 Log.e("WebUI", "WebView error: $message")
-                progressBar?.isVisible = false
+                
+                if (_binding != null) {
+                    binding.webViewProgressBar.isVisible = false
+                }
                 
                 val errorHtml = """
                     <html>
-                        <body style="background-color: #0F1115; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; padding: 24px; text-align: center;">
-                            <div style="background: #1F2630; border-radius: 16px; padding: 40px 24px; max-width: 360px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
-                                <div style="background: rgba(239, 68, 68, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto;">
+                        <head>
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <style>
+                                body { background-color: #0F1115; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; margin: 0; padding: 24px; text-align: center; }
+                                .card { background: #1F2630; border-radius: 16px; padding: 40px 24px; max-width: 360px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3); border: 1px solid rgba(255,255,255,0.05); }
+                                .icon { background: rgba(239, 68, 68, 0.1); width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px auto; }
+                                h2 { color: #ffffff; margin: 0 0 12px 0; font-size: 22px; font-weight: 700; }
+                                p { color: #94a3b8; margin: 0 0 32px 0; font-size: 15px; line-height: 1.5; }
+                                .btn { background-color: #ef4444; color: white; border: none; width: 100%; padding: 14px; border-radius: 10px; font-weight: 600; font-size: 16px; cursor: pointer; transition: background 0.2s; position: relative; }
+                                .btn:active { background-color: #dc2626; }
+                                .btn:disabled { background-color: #4b1a1a; color: #94a3b8; cursor: not-allowed; }
+                                .spinner { display: none; width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; position: absolute; left: 16px; top: 50%; margin-top: -9px; }
+                                @keyframes spin { to { transform: rotate(360deg); } }
+                                .loading .spinner { display: block; }
+                                .loading .btn-text { margin-left: 24px; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="card">
+                                <div class="icon">
                                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                                 </div>
-                                <h2 style="color: #ffffff; margin: 0 0 12px 0; font-size: 22px; font-weight: 700;">Connection Failed</h2>
-                                <p style="color: #94a3b8; margin: 0 0 32px 0; font-size: 15px; line-height: 1.5;">${message.replace("'", "\\'")}</p>
-                                <button onclick="window.location.reload()" style="background-color: #ef4444; color: white; border: none; width: 100%; padding: 14px; border-radius: 10px; font-weight: 600; font-size: 16px; cursor: pointer; transition: background 0.2s;">Try Again</button>
+                                <h2>Connection Failed</h2>
+                                <p>${message.replace("'", "\\'")}</p>
+                                <button id="retryBtn" class="btn" onclick="startRetry()">
+                                    <div class="spinner"></div>
+                                    <span id="btnText" class="btn-text">Try Again</span>
+                                </button>
                             </div>
+                            <script>
+                                function startRetry() {
+                                    const btn = document.getElementById('retryBtn');
+                                    const text = document.getElementById('btnText');
+                                    btn.disabled = true;
+                                    btn.classList.add('loading');
+                                    text.innerText = 'Retrying...';
+                                    
+                                    // Use the Android Bridge to trigger a native reload
+                                    if (window.AndroidBridge) {
+                                        window.AndroidBridge.retry();
+                                    } else {
+                                        window.location.reload();
+                                    }
+                                }
+                            </script>
                         </body>
                     </html>
                 """.trimIndent()
                 view?.loadDataWithBaseURL(null, errorHtml, "text/html", "UTF-8", null)
             }
         }
+        
         myWebView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
                 Log.d("WebViewConsole", "${consoleMessage.message()} -- From line ${consoleMessage.lineNumber()} of ${consoleMessage.sourceId()}")
                 return true
             }
         }
+    }
+
+    private fun refreshWebUI() {
+        if (_binding == null) return
         
-        myWebView.settings.javaScriptEnabled = true
-        myWebView.settings.domStorageEnabled = true
-        myWebView.settings.loadWithOverviewMode = true
-        myWebView.settings.useWideViewPort = true
+        // Reset state and stop any current loading to ensure the next request is processed fresh
+        binding.webRenderer.stopLoading()
+        binding.webViewProgressBar.isVisible = true
+        
+        // Ensure the internal server is synced with the latest data from the database
+        KtorServer.syncProjectsToClient(requireContext())
+
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireActivity())
+        val ipAddressKey = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
+        val deviceMode = sharedPreferences.getString("deviceMode", "default")
 
         val dashboardUrl = if (deviceMode == "client") {
             "http://127.0.0.1:8080/"
@@ -149,14 +201,8 @@ class WebUI : Fragment() {
             "http://$ipAddressKey:8080/"
         }
 
-        Log.d("test", "Loading URL: $dashboardUrl")
-        myWebView.loadUrl(dashboardUrl)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Reload the WebView when the fragment becomes visible to ensure fresh data
-        binding.webRenderer.reload()
+        Log.d("WebUI", "Refreshing WebUI: $dashboardUrl")
+        binding.webRenderer.loadUrl(dashboardUrl)
     }
 
     override fun onDestroyView() {

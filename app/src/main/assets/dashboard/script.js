@@ -210,33 +210,33 @@ function showToast(msg) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
-    // Create a fresh toast element with Red "Error" styling
+    // Create toast with stable layout and inline styles for guaranteed visibility
     const toast = document.createElement('div');
-    toast.className = 'bg-[#1F2630] border-l-4 border-red-500 text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 transition-all duration-500 transform translate-y-4 opacity-0 scale-95';
+    // Using inline styles for the background to avoid dependency on Tailwind bundle
+    toast.style.backgroundColor = '#1F2630';
+    toast.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+    toast.className = 'relative text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 animate-toast-in overflow-hidden max-w-md';
     toast.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.4)';
+    toast.style.minWidth = '280px';
 
     toast.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-        <span class="text-sm font-semibold tracking-tight text-red-50">${msg}</span>
+        <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span style="font-size: 0.875rem; font-weight: 600; line-height: 1.25rem; color: #fee2e2; white-space: normal; word-break: break-word;">${msg}</span>
+        </div>
+        <div style="position: absolute; bottom: 0; left: 0; height: 3px; width: 100%; background-color: #ef4444; animation: progress-drain 3.5s linear forwards;"></div>
     `;
 
     container.appendChild(toast);
 
-    // Animate In
-    requestAnimationFrame(() => {
-        toast.classList.remove('translate-y-4', 'opacity-0', 'scale-95');
-        toast.classList.add('translate-y-0', 'opacity-100', 'scale-100');
-    });
-
     // Auto-remove after 3.5 seconds
     setTimeout(() => {
-        toast.classList.remove('translate-y-0', 'opacity-100', 'scale-100');
-        toast.classList.add('translate-y-[-10px]', 'opacity-0', 'scale-95');
+        toast.classList.replace('animate-toast-in', 'animate-toast-out');
 
         // Remove from DOM after transition finishes
         setTimeout(() => {
             toast.remove();
-        }, 500);
+        }, 300);
     }, 3500);
 }
 
@@ -247,7 +247,16 @@ function renderEmptyState() {
 
 function renderError(msg) {
     const main = document.querySelector('main');
-    if (main) main.innerHTML = `<div class="bg-red-500/10 text-red-500 p-6 rounded-lg border border-red-500/20 m-4">${msg}</div>`;
+    if (main) {
+        main.innerHTML = `
+            <div class="flex justify-center p-8 animate-fade-in-scale">
+                <div class="bg-red-500/10 text-red-500 p-6 rounded-xl border border-red-500/20 max-w-lg w-full text-center shadow-lg">
+                    <svg class="mx-auto mb-4" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <h4 class="text-lg font-bold mb-1">Connection Issue</h4>
+                    <p class="text-sm text-red-400/80">${msg}</p>
+                </div>
+            </div>`;
+    }
 }
 
 // Initial load

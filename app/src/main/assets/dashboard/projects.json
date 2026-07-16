@@ -1,0 +1,98 @@
+﻿{
+  "projects": [
+    {
+      "id": 0,
+      "name": "Weather Station",
+      "widgets": [
+        {
+          "id": 50,
+          "type": "temperature",
+          "title": "Outside Temperature",
+          "value": 22.4,
+          "unit": "°C"
+        },
+        {
+          "id": 2,
+          "type": "humidity",
+          "title": "Humidity",
+          "value": 64,
+          "unit": "%"
+        },
+        {
+          "id": 20,
+          "type": "switch",
+          "title": "Garden Lights",
+          "value": true,
+          "action": {
+            "type": "console",
+            "message": "Garden lights toggled"
+          }
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Robot",
+      "widgets": [
+        {
+          "id": 4,
+          "type": "temperature",
+          "title": "Motor Temperature",
+          "value": 41,
+          "unit": "°C"
+        },
+        {
+          "id": 5,
+          "type": "humidity",
+          "title": "Battery",
+          "value": 78,
+          "unit": "%"
+        },
+        {
+          "id": 6,
+          "type": "switch",
+          "title": "Autopilot",
+          "value": false,
+          "action": {
+            "type": "http",
+            "url": "/api/projects/{{projectId}}/widgets/{{widgetId}}",
+            "method": "POST",
+            "body": {
+              "enabled": "{{value}}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Smart Home",
+      "widgets": [
+        {
+          "id": 7,
+          "type": "temperature",
+          "title": "Living Room",
+          "value": 20.8,
+          "unit": "°C"
+        },
+        {
+          "id": 8,
+          "type": "humidity",
+          "title": "Air Quality",
+          "value": 53,
+          "unit": "%"
+        },
+        {
+          "id": 9,
+          "type": "switch",
+          "title": "Heating",
+          "value": true,
+          "action": {
+            "type": "console",
+            "message": "Heating toggled"
+          }
+        }
+      ]
+    }
+  ]
+}

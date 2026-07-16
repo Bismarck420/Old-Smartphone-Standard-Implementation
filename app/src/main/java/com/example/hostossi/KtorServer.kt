@@ -3,6 +3,8 @@
 import android.app.ProgressDialog
 import android.content.Context
 import android.util.Log
+import android.hardware.Sensor
+import android.hardware.SensorManager
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
 import io.ktor.client.HttpClient
@@ -178,6 +180,18 @@ object KtorServer {
                             } else {
                                 // Hosts should not identify as clients for discovery
                                 call.respondText("hostossi-host", status = HttpStatusCode.OK)
+                            }
+                        }
+
+                        get("/sensors") {
+                            try {
+                                val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                                val deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
+                                val sensorNames = deviceSensors.map { it.name }
+                                call.respond(sensorNames)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to get sensors", e)
+                                call.respondText("Error fetching sensors", status = HttpStatusCode.InternalServerError)
                             }
                         }
 
