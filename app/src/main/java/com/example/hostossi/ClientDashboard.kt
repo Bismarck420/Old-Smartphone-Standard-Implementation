@@ -6,6 +6,7 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import com.example.hostossi.ProjectManager.clientSelectedProject
 import com.example.hostossi.databinding.FragmentClientDashboardBinding
 import com.example.hostossi.databinding.FragmentProjectViewBinding
 import com.example.hostossi.databinding.ItemProjectBinding
@@ -45,20 +46,10 @@ class ClientDashboard : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         _binding = FragmentClientDashboardBinding.bind(view)
-        Log.d("test", ProjectManager.clientSelectedProject.toString())
+        Log.d("test", clientSelectedProject.toString())
         binding.ipAddress.text = "IP-Address is: ${NetworkDiscovery.localIpv4Address() ?: "unknown"}"
 
-        if(ProjectManager.clientSelectedProject.isSelectedProject){
-            binding.noProjectSelected.visibility = View.GONE
-            refreshDashboard()
-            Log.d("test", "selected project detected")
-        }
-        else{
-            binding.noProjectSelected.visibility = View.VISIBLE
-        }
-
         binding.swipeRefreshLayout.setOnRefreshListener {
-            refreshDashboard()
             binding.swipeRefreshLayout.isRefreshing = false
         }
 
@@ -82,36 +73,6 @@ class ClientDashboard : Fragment() {
         _binding = null
     }
 
-    fun setSelectedProject(){
-        val selectedProject = ItemProjectBinding.inflate(LayoutInflater.from(requireContext()), binding.dashboardContainer, false)
-
-        binding.selectedProjectContainer.removeAllViews()
-
-        selectedProject.projectCard.id = View.generateViewId()
-
-        selectedProject.projectTitle.text = ProjectManager.clientSelectedProject.name
-        selectedProject.projectDescription.text = ProjectManager.clientSelectedProject.description
-        selectedProject.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-        selectedProject.verticalMenu.visibility = View.GONE
-
-        Log.d("test", selectedProject.toString())
-
-        binding.selectedProjectContainer.addView(selectedProject.root)
-    }
-
-    fun refreshDashboard(){
-        if(ProjectManager.clientSelectedProject.isSelectedProject){
-            Log.d("test", "project selected")
-            setSelectedProject()
-            binding.noProjectSelected.visibility = View.GONE
-        }
-        else if(ProjectManager.clientSelectedProject.isSelectedProject == false){
-            Log.d("test", "no project selected")
-            binding.noProjectSelected.visibility = View.VISIBLE
-            binding.selectedProjectContainer.removeAllViews()
-        }
-
-    }
 
     companion object {
         /**

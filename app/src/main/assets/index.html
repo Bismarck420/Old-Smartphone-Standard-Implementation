@@ -1,29 +1,95 @@
-<!DOCTYPE html><!-- Handled by Exflow.site -->
-<html lang="en">
-
+<!DOCTYPE html>
+<html lang="de">
 <head>
-    <meta charset="utf-8"/>
-    <title>Gabriel&#x27;s Sublime Site</title>
-    <meta content="width=device-width, initial-scale=1" name="viewport"/>
-    <meta content="Webflow" name="generator"/>
-    <meta name="color-scheme" content="light dark">
-    <link rel="stylesheet" href="/css/templatemo-crypto-dashboard.css">
+    <meta charset="UTF-8">
+    <title>Projects Dashboard</title>
 
+    <link rel="stylesheet" href="style.css">
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <h1>OSSI Dashboard</h1>
-    <p>Your Peripherals will be listed here. Later, you can also influence their behaviour.</p>
 
-    <label class="switch">
-        <input type="checkbox">
-        <span class="slider"></span>
-    </label>
+<div class="sidebar">
 
-    <!-- Rounded switch -->
-    <label class="switch">
-        <input type="checkbox">
-        <span class="slider round"></span>
-    </label>
+    <h1>Projects</h1>
+
+    <button class="project active">Weather Station</button>
+    <button class="project">Robot</button>
+    <button class="project">Smart Home</button>
+
+</div>
+
+<div class="content">
+
+    <div class="topbar">
+
+        <h2>Weather Station</h2>
+
+        <button class="add">
+            +
+        </button>
+
+    </div>
+
+    <div class="cards">
+
+        <div class="card">
+
+            <h3>Temperature</h3>
+
+            <div class="sensor">
+
+                <span>22.4 °C</span>
+
+                <div class="progress">
+
+                    <div class="fill blue" style="width:64%"></div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="card">
+
+            <h3>Relay</h3>
+
+            <label class="switch">
+
+                <input type="checkbox" checked>
+
+                <span class="slider"></span>
+
+            </label>
+
+        </div>
+
+        <div class="card">
+
+            <h3>Humidity</h3>
+
+            <div class="sensor">
+
+                <span>54 %</span>
+
+                <div class="progress">
+
+                    <div class="fill orange" style="width:54%"></div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+
 </body>
 </html>

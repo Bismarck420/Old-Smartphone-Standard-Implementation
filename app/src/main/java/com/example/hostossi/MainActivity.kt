@@ -1,16 +1,17 @@
 package com.example.hostossi
 
-import android.content.Intent
+import android.content.Context
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
-import android.view.View
-import android.widget.PopupMenu
+import android.view.MotionEvent
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContentProviderCompat.requireContext
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.children
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
@@ -20,14 +21,6 @@ import com.example.hostossi.databinding.ItemProjectBinding
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.InetAddress
-import java.net.NetworkInterface
-import java.util.Collections
-import java.util.Locale
-import kotlin.concurrent.thread
-import kotlin.sequences.forEach
-
 
 class MainActivity : AppCompatActivity() {
 
@@ -40,6 +33,15 @@ class MainActivity : AppCompatActivity() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val themeValue = sharedPreferences.getString("theme_mode", "system")
+        val mode = when (themeValue) {
+            "light" -> AppCompatDelegate.MODE_NIGHT_NO
+            "dark" -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        AppCompatDelegate.setDefaultNightMode(mode)
+
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -47,7 +49,31 @@ class MainActivity : AppCompatActivity() {
         projectViewBinding = FragmentProjectViewBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-
+        // Pre-load projects into ProjectManager AND trigger a sync to the client
+        // to ensure other fragments (like WebUI) have access to data immediately on startup,
+        // without needing to visit ProjectViewFragment first.
+        database = (this.application as MyApplication).dataBase
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                // We use getAllWithModulesOnce because the dashboard needs modules
+                val projectsWithModules = database.projectDao().getAllWithModulesOnce()
+                ProjectManager.projectList.clear()
+                
+                val fullProjects = projectsWithModules.map { pwm ->
+                    val p = pwm.project.copy()
+                    p.moduleList = pwm.modules.toMutableList()
+                    p
+                }
+                
+                ProjectManager.projectList.addAll(fullProjects)
+                Log.d("MainActivity", "Pre-loaded ${fullProjects.size} projects with modules into ProjectManager")
+                
+                // IMPORTANT: This triggers the background sync that the dashboard relies on
+                KtorServer.syncProjectsToClient(this@MainActivity)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to pre-load projects", e)
+            }
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -55,47 +81,51 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-//set up Bottom navigation view
+        // set up Bottom navigation view
         val bottomNavigationView: BottomNavigationView = binding.bottomNavigationView
-//set up Fragments
+        // set up Fragments
         val settingsFragment = SettingsFragment()
         val projectViewFragment = ProjectViewFragment()
-        val nfcFragment = NFCTool()
         val webUIFragment = WebUI()
         val dashboardFragment = ClientDashboard()
-//get settings
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+
+        // get settings
         val name = sharedPreferences.getString("deviceMode", "")
-//database functionality
-        database = (this.application as MyApplication).dataBase
+
+        // database functionality
         projectDao = database.projectDao()
         moduleDao = database.moduleDao()
-//select fragment functionality
+
+        // select fragment functionality
         bottomNavigationView.setOnNavigationItemSelectedListener {
             when (it.itemId) {
                 R.id.projects -> setCurrentFragment(projectViewFragment)
                 R.id.settings -> setCurrentFragment(settingsFragment)
-                R.id.nfc -> setCurrentFragment(nfcFragment)
                 R.id.webui -> setCurrentFragment(webUIFragment)
                 R.id.clientDashboard -> setCurrentFragment(dashboardFragment)
             }
             true
         }
-        Log.d("test", "this happened on install")
 
         if(name == "client"){
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = true
             bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
-            bottomNavigationView.menu.findItem(R.id.clientDashboard).isChecked = true
-            setCurrentFragment(dashboardFragment)
+            
+            if (savedInstanceState == null) {
+                bottomNavigationView.selectedItemId = R.id.clientDashboard
+            }
 
             KtorServer.startServer(this)
         }
         else{
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
             bottomNavigationView.menu.findItem(R.id.projects).isVisible = true
-            setCurrentFragment(projectViewFragment)
+            
+            if (savedInstanceState == null) {
+                bottomNavigationView.selectedItemId = R.id.projects
+            }
 
+            // When in Host mode, we don't need the local dashboard server running
             KtorServer.stopServer()
 
             Log.d("test", "i am now a host")
@@ -112,5 +142,20 @@ class MainActivity : AppCompatActivity() {
             replace(R.id.flFragment, fragment)
             commit()
         }
-}
 
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            val v = currentFocus
+            if (v is EditText) {
+                val outRect = Rect()
+                v.getGlobalVisibleRect(outRect)
+                if (!outRect.contains(event.rawX.toInt(), event.rawY.toInt())) {
+                    v.clearFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.hideSoftInputFromWindow(v.windowToken, 0)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+}

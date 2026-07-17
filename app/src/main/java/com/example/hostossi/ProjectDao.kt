@@ -15,6 +15,17 @@ interface ProjectDao {
 @Query("SELECT * FROM projects")
 fun getAll(): Flow<List<Project>>
 
+@Query("SELECT * FROM projects")
+suspend fun getAllOnce(): List<Project>
+
+@Transaction
+@Query("SELECT * FROM projects")
+suspend fun getAllWithModulesOnce(): List<ProjectWithModules>
+
+@Transaction
+@Query("SELECT * FROM projects WHERE id = :projectId")
+fun getProjectWithModules(projectId: String): Flow<ProjectWithModules?>
+
 @Insert
 suspend fun insertAll(vararg project: Project)
 
@@ -23,19 +34,6 @@ suspend fun insertProject(project: Project)
 
 @Update
 suspend fun updateProject(project: Project)
-
-    @Query("UPDATE projects SET is_selected_project = 0")
-    suspend fun resetAllSelection()
-
-    @Query("UPDATE projects SET is_selected_project = 1 WHERE id = :projectId")
-    suspend fun setSelected(projectId: String)
-
-    @Transaction
-    suspend fun updateSelectedProject(projectId: String) {
-        resetAllSelection()
-        setSelected(projectId)
-    }
-
 
 @Delete
 suspend fun delete(project: Project)

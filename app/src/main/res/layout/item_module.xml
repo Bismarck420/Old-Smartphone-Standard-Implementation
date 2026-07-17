@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="wrap_content"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <com.google.android.material.card.MaterialCardView
@@ -9,11 +9,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
+        app:cardCornerRadius="8dp"
+        app:cardElevation="2dp"
+        app:strokeWidth="2dp"
         app:layout_constraintTop_toTopOf="parent">
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:animateLayoutChanges="true">
 
             <TextView
@@ -22,28 +25,63 @@
                 android:layout_height="wrap_content"
                 android:textSize="20sp"
                 android:textStyle="bold"
-                android:padding="16dp"
+                android:paddingStart="18dp"
+                android:paddingTop="16dp"
+                android:paddingEnd="8dp"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/verticalMenu">
+                app:layout_constraintEnd_toStartOf="@id/labelModuleType">
 
             </TextView>
+            <EditText
+                android:id="@+id/editableModuleTitle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                android:textStyle="bold"
+                android:padding="16dp"
+                android:visibility="gone"
+                android:inputType="text"
+                android:imeOptions="actionDone"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toStartOf="@+id/verticalMenu">
 
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/labelModuleType"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_margin="16dp"
-            android:backgroundTint="@color/label_color"
-            app:strokeColor="@color/label_color"
-            app:layout_constraintTop_toTopOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/idLabelCard"
-            app:cardCornerRadius="4dp">
-            <ImageView
-                android:id="@+id/iconDisplay"
+            </EditText>
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/labelModuleType"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
-        </com.google.android.material.card.MaterialCardView>
+                android:layout_height="32dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginEnd="8dp"
+                app:cardCornerRadius="4dp"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/verticalMenu">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:orientation="horizontal"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="10dp">
+
+                    <ImageView
+                        android:id="@+id/iconDisplay"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_marginEnd="6dp"/>
+
+                    <TextView
+                        android:id="@+id/moduleTypeLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
 
             <ImageButton
                 android:id="@+id/verticalMenu"
@@ -57,29 +95,6 @@
                 app:tint="?android:attr/textColorSecondary">
             </ImageButton>
 
-            <com.google.android.material.card.MaterialCardView
-                android:id="@+id/idLabelCard"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_margin="16dp"
-                android:backgroundTint="@color/label_color"
-                app:strokeColor="@color/label_color"
-                app:layout_constraintStart_toEndOf="@id/moduleTitle"
-                app:layout_constraintTop_toTopOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/verticalMenu"
-                app:cardCornerRadius="4dp">
-                <TextView
-                    android:id="@+id/idLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="4dp"
-                    android:textSize="10sp"
-                    app:layout_constraintTop_toTopOf="parent"
-                    app:layout_constraintStart_toStartOf="@id/verticalMenu" />
-
-            </com.google.android.material.card.MaterialCardView>
-
-
             <TextView
                 android:id="@+id/moduleDescription"
                 android:layout_width="match_parent"
@@ -88,25 +103,11 @@
                 android:padding="16dp"
                 android:textSize="12sp"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/idLabelCard">
+                app:layout_constraintTop_toBottomOf="@id/moduleTitle">
             </TextView>
 
             <ImageButton
-                android:id="@+id/scanBluetooth"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:padding="16dp"
-                android:layout_margin="10dp"
-                app:layout_constraintEnd_toStartOf="@id/scanNFC"
-                app:layout_constraintTop_toBottomOf="@+id/moduleDescription"
-                app:layout_constraintBottom_toBottomOf="parent"
-                app:srcCompat="@drawable/ic_bluetooth"
-                android:backgroundTint="@color/primary_color">
-            </ImageButton>
-
-            <ImageButton
-                android:id="@+id/scanNFC"
+                android:id="@+id/scanWIFI"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:visibility="gone"
@@ -115,7 +116,7 @@
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toBottomOf="@+id/moduleDescription"
                 app:layout_constraintBottom_toBottomOf="parent"
-                app:srcCompat="@drawable/nfc"
+                app:srcCompat="@drawable/ic_wifi"
                 android:backgroundTint="@color/primary_color">
             </ImageButton>
 
@@ -127,7 +128,7 @@
                 android:visibility="gone"
                 android:layout_margin="16dp"
                 app:layout_constraintTop_toBottomOf="@id/moduleDescription"
-                app:layout_constraintEnd_toStartOf="@id/scanBluetooth"
+                app:layout_constraintEnd_toStartOf="@id/scanWIFI"
                 app:layout_constraintBottom_toBottomOf="parent"
                 />
 
