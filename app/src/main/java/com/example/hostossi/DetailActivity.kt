@@ -1,11 +1,6 @@
 package com.example.hostossi
 
-import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
@@ -27,7 +22,6 @@ import com.example.hostossi.databinding.ActivityDetailBinding
 import com.example.hostossi.databinding.ItemModuleBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
-import com.google.android.material.snackbar.Snackbar
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -52,7 +46,7 @@ class DetailActivity : AppCompatActivity() {
     }
     private lateinit var projectDao : ProjectDao
     private lateinit var moduleDao: ModuleDao
-    private lateinit var peripheralDao: PeripheralDao
+    private lateinit var deviceEntityDao: DeviceEntityDao
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +76,7 @@ class DetailActivity : AppCompatActivity() {
 
         projectDao = db.projectDao() //get interfaces
         moduleDao = db.moduleDao()
-        peripheralDao = db.peripheralDao()
+        deviceEntityDao = db.peripheralDao()
 
         updateModulesfromDB()
 
@@ -155,7 +149,7 @@ class DetailActivity : AppCompatActivity() {
                     itemModuleBinding.moduleDescription.text = module.description
                     styleModuleCard(itemModuleBinding, module.moduleType)
 
-                    module.peripheralList = peripheralDao.getAllPeripherals() as MutableList<Peripheral> //refresh peripherals
+                    module.deviceList = deviceEntityDao.getAllDevices() as MutableList<DeviceEntity> //refresh peripherals
 
                     withContext(Dispatchers.Main){
                         binding.moduleList.addView(itemModuleBinding.root) //adds the module to the list
@@ -304,7 +298,7 @@ class DetailActivity : AppCompatActivity() {
         val btnCancel = view.findViewById<android.widget.Button>(R.id.btnCancel)
 
         // Pre-fill with existing peripherals
-        val selectedTempPeripherals = module.peripheralList.toMutableList()
+        val selectedTempPeripherals = module.deviceList.toMutableList()
 
         sensors.forEach { sensorName ->
             val chip = Chip(this).apply {
@@ -324,17 +318,17 @@ class DetailActivity : AppCompatActivity() {
                 setTextColor(textColor)
 
                 // Initial state
-                if (selectedTempPeripherals.any { it.peripheralName == sensorName }) {
+                if (selectedTempPeripherals.any { it.name == sensorName }) {
                     isChecked = true
                 }
 
                 setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) {
-                        if (selectedTempPeripherals.none { it.peripheralName == sensorName }) {
-                            selectedTempPeripherals.add(Peripheral(peripheralName = sensorName, moduleId = module.id))
+                        if (selectedTempPeripherals.none { it.name == sensorName }) {
+                            selectedTempPeripherals.add(DeviceEntity(name = sensorName, type= DeviceType.ACCELEROMETER, connectionType = ConnectionType.WIFI, moduleId = module.id))
                         }
                     } else {
-                        selectedTempPeripherals.removeAll { it.peripheralName == sensorName }
+                        selectedTempPeripherals.removeAll { it.name == sensorName }
                     }
                 }
             }
@@ -348,12 +342,12 @@ class DetailActivity : AppCompatActivity() {
                 // Clear old and add new selection
                 // In a real scenario, you might want to diff this, but for now we replace
                 selectedTempPeripherals.forEach { 
-                    peripheralDao.insertPeripheral(it)
+                    deviceEntityDao.insertDevice(it)
                 }
                 
                 withContext(Dispatchers.Main) {
-                    module.peripheralList = selectedTempPeripherals
-                    module.description = "Sensors: " + selectedTempPeripherals.joinToString { it.peripheralName }
+                    module.deviceList = selectedTempPeripherals
+                    module.description = "Sensors: " + selectedTempPeripherals.joinToString { it.name }
                     itemModuleBinding.moduleDescription.text = module.description
                     
                     SnackbarUtils.showModernSnackbar(binding.root, "Added ${selectedTempPeripherals.size} sensors!", anchorView = binding.expandableFab)

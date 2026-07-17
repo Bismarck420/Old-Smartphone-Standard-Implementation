@@ -36,6 +36,6 @@ interface ModuleDao {
 
     @Transaction
     @Query("SELECT * FROM modules WHERE id = :moduleID")
-    fun getModuleWithPeripherals(moduleID: String): Flow<ModuleWithPeripherals?>
+    fun getModuleWithDevices(moduleID: String): Flow<ModuleWithDevices?>
 }
 

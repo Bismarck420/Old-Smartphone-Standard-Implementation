@@ -16,8 +16,8 @@ data class Module(
     @SerialName("title")
     @ColumnInfo("module_title") var moduleTitle : String = "",
     @ColumnInfo("module_description") var description : String = "",
-    @ColumnInfo("peripheral_list") var peripheralList: MutableList<Peripheral> = mutableListOf(),
-    @ColumnInfo("selected_peripherals") var selectedPeripherals : MutableList<Peripheral> = mutableListOf(),
+    @ColumnInfo("device_list") var deviceList: MutableList<DeviceEntity> = mutableListOf(),
+    @ColumnInfo("selected_devices") var selectedDevices : MutableList<DeviceEntity> = mutableListOf(),
     @SerialName("type")
     @ColumnInfo("module_type") var moduleType : String = ""
 ) {

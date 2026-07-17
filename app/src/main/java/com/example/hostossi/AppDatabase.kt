@@ -8,12 +8,12 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database (entities = [Project::class, Module::class, Peripheral::class], version = 4)
+@Database (entities = [Project::class, Module::class, DeviceEntity::class], version = 4)
 @TypeConverters (Converters::class)
 abstract class AppDatabase : RoomDatabase(){
     abstract fun projectDao() : ProjectDao
     abstract fun moduleDao() : ModuleDao
-    abstract fun peripheralDao() : PeripheralDao
+    abstract fun peripheralDao() : DeviceEntityDao
 
     companion object {
         @Volatile

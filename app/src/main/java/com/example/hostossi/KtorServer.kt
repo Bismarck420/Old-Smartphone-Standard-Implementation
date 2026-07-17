@@ -4,12 +4,15 @@ import android.app.ProgressDialog
 import android.content.Context
 import android.util.Log
 import android.hardware.Sensor
+import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
 import io.ktor.client.HttpClient
+import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -57,6 +60,8 @@ object KtorServer {
 
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private var sensorData = ""
 
     fun startServer(context: Context) {
         if (serverJob != null) return
@@ -142,7 +147,7 @@ object KtorServer {
                                         Log.d(TAG, "Database updated for module ${module.id}")
                                         
                                         // ESP8266 Logic
-                                        val peripherals = db.peripheralDao().getPeripheralsForModule(module.id)
+                                        val peripherals = db.peripheralDao().getDevicesForModule(module.id)
                                         peripherals.forEach { p ->
                                             if (p.ipAddress.isNotBlank()) {
                                                 clientScope.launch {
@@ -188,6 +193,13 @@ object KtorServer {
                                 val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
                                 val deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
                                 val sensorNames = deviceSensors.map { it.name }
+
+                                val lightSensor : LightSensor = LightSensor(context)
+                                lightSensor.startListening()
+                                lightSensor.setOnSensorValuesChangedListener { values ->
+                                    Log.d("sensorvalues", "Light Sensor Value: " + values[0].toString())
+                                }
+
                                 call.respond(sensorNames)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to get sensors", e)
@@ -255,7 +267,8 @@ object KtorServer {
                             call.respondText(css, ContentType.Text.CSS)
                         }
 
-                        post("/sensorData") {
+                        get("/sensorData") {
+
                             val sensorData = call.receiveText()
                             call.respondText { "sensor data received" }
                         }
@@ -362,4 +375,5 @@ object KtorServer {
             else -> ContentType.Application.OctetStream
         }
     }
+
 }
