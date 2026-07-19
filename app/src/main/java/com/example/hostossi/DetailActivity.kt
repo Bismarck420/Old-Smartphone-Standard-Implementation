@@ -149,7 +149,11 @@ class DetailActivity : AppCompatActivity() {
                     itemModuleBinding.moduleDescription.text = module.description
                     styleModuleCard(itemModuleBinding, module.moduleType)
 
-                    module.deviceList = deviceEntityDao.getAllDevices() as MutableList<DeviceEntity> //refresh peripherals
+                    // Fetch devices directly from DAO for this module
+                    val devices = withContext(Dispatchers.IO) {
+                        deviceEntityDao.getDevicesForModule(module.id)
+                    }
+                    module.deviceList = devices.toMutableList()
 
                     withContext(Dispatchers.Main){
                         binding.moduleList.addView(itemModuleBinding.root) //adds the module to the list
@@ -157,6 +161,12 @@ class DetailActivity : AppCompatActivity() {
 
                     }
                     addOnClickListeners(itemModuleBinding, module) //makes the module clickable
+
+                    //This also gets called when new sensors were added or removed
+                    //Logic for listening to the sensors will be implemented here
+                    setSensorListeners(module)
+
+
 
                 }
 
@@ -274,6 +284,7 @@ class DetailActivity : AppCompatActivity() {
                         SnackbarUtils.showModernSnackbar(binding.root, "No sensors found. Check client connection.", anchorView = binding.expandableFab)
                         return@launch
                     }
+                    Log.d("selectSensor", "showing bottom sheet for: " + genericModule.id)
                     showSensorSelectionBottomSheet(sensors, genericModule, itemModuleBinding)
 
                 } catch (e: Exception) {
@@ -289,74 +300,92 @@ class DetailActivity : AppCompatActivity() {
         module: Module,
         itemModuleBinding: ItemModuleBinding
     ) {
-        val bottomSheetDialog = BottomSheetDialog(this)
-        val view = layoutInflater.inflate(R.layout.bottom_sheet_sensor_selection, binding.root, false)
-        bottomSheetDialog.setContentView(view)
+        lifecycleScope.launch {
+            // Fetch actual devices from DB
+            val currentDevices = withContext(Dispatchers.IO) {
+                deviceEntityDao.getDevicesForModule(module.id)
+            }
+            module.deviceList = currentDevices.toMutableList()
 
-        val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.sensorChipGroup)
-        val btnAdd = view.findViewById<android.widget.Button>(R.id.btnAddSensors)
-        val btnCancel = view.findViewById<android.widget.Button>(R.id.btnCancel)
+            val bottomSheetDialog = BottomSheetDialog(this@DetailActivity)
+            val view = layoutInflater.inflate(R.layout.bottom_sheet_sensor_selection, binding.root, false)
+            bottomSheetDialog.setContentView(view)
 
-        // Pre-fill with existing peripherals
-        val selectedTempPeripherals = module.deviceList.toMutableList()
+            val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.sensorChipGroup)
+            val btnAdd = view.findViewById<android.widget.Button>(R.id.btnAddSensors)
+            val btnCancel = view.findViewById<android.widget.Button>(R.id.btnCancel)
 
-        sensors.forEach { sensorName ->
-            val chip = Chip(this).apply {
-                text = sensorName
-                isCheckable = true
-                isCheckedIconVisible = true
-                
-                // Colors
-                val selectedColor = ContextCompat.getColor(this@DetailActivity, R.color.accent_color)
-                val unselectedColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_background)
-                val textColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_text)
-                
-                chipBackgroundColor = android.content.res.ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
-                    intArrayOf(selectedColor, unselectedColor)
-                )
-                setTextColor(textColor)
+            val selectedSensors = module.deviceList.toMutableList()
 
-                // Initial state
-                if (selectedTempPeripherals.any { it.name == sensorName }) {
-                    isChecked = true
-                }
+            sensors.forEach { sensorName ->
+                val chip = Chip(this@DetailActivity).apply {
+                    text = sensorName
+                    isCheckable = true
+                    isCheckedIconVisible = true
+                    
+                    val selectedColor = ContextCompat.getColor(this@DetailActivity, R.color.accent_color)
+                    val unselectedColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_background)
+                    val textColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_text)
+                    
+                    chipBackgroundColor = android.content.res.ColorStateList(
+                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                        intArrayOf(selectedColor, unselectedColor)
+                    )
+                    setTextColor(textColor)
 
-                setOnCheckedChangeListener { _, isChecked ->
-                    if (isChecked) {
-                        if (selectedTempPeripherals.none { it.name == sensorName }) {
-                            selectedTempPeripherals.add(DeviceEntity(name = sensorName, type= DeviceType.ACCELEROMETER, connectionType = ConnectionType.WIFI, moduleId = module.id))
+                    // Check if this sensor (by name) is already assigned to this module
+                    if (selectedSensors.any { it.name == sensorName }) {
+                        isChecked = true
+                    }
+
+                    setOnCheckedChangeListener { _, isChecked ->
+                        if (isChecked) {
+                            if (selectedSensors.none { it.name == sensorName }) {
+                                val newDevice = DeviceEntity(
+                                    name = sensorName,
+                                    moduleId = module.id,
+                                    type = DeviceType.fromString(sensorName),
+                                    connectionType = ConnectionType.ANDROID // Assuming Android sensors from fetchSensors
+                                )
+                                selectedSensors.add(newDevice)
+                            }
+                        } else {
+                            selectedSensors.removeAll { it.name == sensorName }
                         }
-                    } else {
-                        selectedTempPeripherals.removeAll { it.name == sensorName }
                     }
                 }
+                chipGroup.addView(chip)
             }
-            chipGroup.addView(chip)
-        }
 
-        btnCancel.setOnClickListener { bottomSheetDialog.dismiss() }
+            btnCancel.setOnClickListener { bottomSheetDialog.dismiss() }
 
-        btnAdd.setOnClickListener {
-            lifecycleScope.launch(Dispatchers.IO) {
-                // Clear old and add new selection
-                // In a real scenario, you might want to diff this, but for now we replace
-                selectedTempPeripherals.forEach { 
-                    deviceEntityDao.insertDevice(it)
-                }
-                
-                withContext(Dispatchers.Main) {
-                    module.deviceList = selectedTempPeripherals
-                    module.description = "Sensors: " + selectedTempPeripherals.joinToString { it.name }
-                    itemModuleBinding.moduleDescription.text = module.description
+            btnAdd.setOnClickListener {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    // Update DB
+                    deviceEntityDao.deleteDevicesForModule(module.id)
+                    selectedSensors.forEach { 
+                        deviceEntityDao.insertDevice(it)
+                    }
                     
-                    SnackbarUtils.showModernSnackbar(binding.root, "Added ${selectedTempPeripherals.size} sensors!", anchorView = binding.expandableFab)
-                    bottomSheetDialog.dismiss()
+                    withContext(Dispatchers.Main) {
+                        module.deviceList = selectedSensors
+                        module.description = "Sensors: " + selectedSensors.joinToString { it.name }
+                        itemModuleBinding.moduleDescription.text = module.description
+                        
+                        SnackbarUtils.showModernSnackbar(binding.root, "Added ${selectedSensors.size} sensors!", anchorView = binding.expandableFab)
+                        bottomSheetDialog.dismiss()
+                    }
+                    
+                    // Persist the updated module description
+                    moduleDao.updateModule(module)
+
+                    // Sync to client
+                    KtorServer.syncProjectsToClient(this@DetailActivity)
                 }
             }
-        }
 
-        bottomSheetDialog.show()
+            bottomSheetDialog.show()
+        }
     }
 
     private fun setModuleActionsVisible(
@@ -384,5 +413,11 @@ class DetailActivity : AppCompatActivity() {
             }
         }
         return super.dispatchTouchEvent(event)
+    }
+
+    fun setSensorListeners(module: Module){
+        for(device in module.deviceList){
+
+        }
     }
 }

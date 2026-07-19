@@ -6,7 +6,6 @@ object ProjectManager {
     var hostSelectedProject : Project = Project()
     var clientSelectedProject : Project = Project()
 
-
     fun findProject(id: String): Project? {
         return projectList.find { it.id == id }
     }

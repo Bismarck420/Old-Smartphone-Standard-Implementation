@@ -16,13 +16,12 @@ data class Module(
     @SerialName("title")
     @ColumnInfo("module_title") var moduleTitle : String = "",
     @ColumnInfo("module_description") var description : String = "",
-    @ColumnInfo("device_list") var deviceList: MutableList<DeviceEntity> = mutableListOf(),
-    @ColumnInfo("selected_devices") var selectedDevices : MutableList<DeviceEntity> = mutableListOf(),
     @SerialName("type")
-    @ColumnInfo("module_type") var moduleType : String = ""
+    @ColumnInfo("module_type") var moduleType : String = "",
+    @ColumnInfo("value") var value: Double = 0.0,
+    @ColumnInfo("unit") var unit: String = "",
+    @ColumnInfo("device_list") var deviceList: MutableList<DeviceEntity> = mutableListOf()
 ) {
-    var value: Double = 0.0
-    var unit: String = ""
     @Ignore var action: Action? = null
 }
 

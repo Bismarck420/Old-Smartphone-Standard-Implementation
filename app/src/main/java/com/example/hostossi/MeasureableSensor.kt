@@ -11,7 +11,6 @@ abstract class MeasureableSensor{
 
     fun setOnSensorValuesChangedListener(listener: (List<Float>)-> Unit) {
         onSensorValuesChanged = listener
-
     }
 
 

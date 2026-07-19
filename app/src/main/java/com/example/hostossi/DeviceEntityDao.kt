@@ -21,6 +21,9 @@ interface DeviceEntityDao {
     @Query("SELECT * FROM devices WHERE module_id = :moduleId")
     suspend fun getDevicesForModule(moduleId: String): List<DeviceEntity>
 
+    @Query("DELETE FROM devices WHERE module_id = :moduleId")
+    suspend fun deleteDevicesForModule(moduleId: String)
+
     @Update
     suspend fun updateDevice(device: DeviceEntity)
 

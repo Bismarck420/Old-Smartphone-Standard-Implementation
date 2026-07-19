@@ -240,7 +240,7 @@ object KtorServer {
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Error in /projects.json", e)
-                                call.respondText("Error: ${e.message}", status = HttpStatusCode.InternalServerError)
+                                call.respondText("Error: ${e.localizedMessage}", status = HttpStatusCode.InternalServerError)
                             }
                         }
 

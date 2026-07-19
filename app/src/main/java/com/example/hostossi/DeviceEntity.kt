@@ -14,7 +14,7 @@ data class DeviceEntity(
     @ColumnInfo("name") val name: String,
     @ColumnInfo("description") val description: String = "",
     @ColumnInfo("type") val type: DeviceType,
-    @ColumnInfo("connectionType") val connectionType: ConnectionType,
-    @ColumnInfo("ipAddress") val ipAddress: String = ""
+    @ColumnInfo("connection_type") val connectionType: ConnectionType,
+    @ColumnInfo("ip_address") val ipAddress: String = ""
 
 )

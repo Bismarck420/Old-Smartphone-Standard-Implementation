@@ -12,10 +12,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ModuleDao {
 
-    @Query("SELECT * FROM modules WHERE id = :modID")
-    suspend fun getSensorsForModule(modID: String): List<Module>
-
-    // Alles löschen
     @Query("DELETE FROM modules")
     suspend fun deleteAll()
 
