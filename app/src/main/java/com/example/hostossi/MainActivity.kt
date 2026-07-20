@@ -57,16 +57,20 @@ class MainActivity : AppCompatActivity() {
             try {
                 // We use getAllWithModulesOnce because the dashboard needs modules
                 val projectsWithModules = database.projectDao().getAllWithModulesOnce()
-                ProjectManager.projectList.clear()
                 
                 val fullProjects = projectsWithModules.map { pwm ->
                     val p = pwm.project.copy()
-                    p.moduleList = pwm.modules.toMutableList()
+                    p.moduleList = pwm.modules.map { mwd ->
+                        val m = mwd.module.copy()
+                        m.deviceList = mwd.devices.toMutableList()
+                        m
+                    }.toMutableList()
                     p
                 }
                 
+                ProjectManager.projectList.clear()
                 ProjectManager.projectList.addAll(fullProjects)
-                Log.d("MainActivity", "Pre-loaded ${fullProjects.size} projects with modules into ProjectManager")
+                Log.d("MainActivity", "Pre-loaded ${fullProjects.size} projects with modules and devices")
                 
                 // IMPORTANT: This triggers the background sync that the dashboard relies on
                 KtorServer.syncProjectsToClient(this@MainActivity)

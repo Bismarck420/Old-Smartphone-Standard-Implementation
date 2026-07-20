@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database (entities = [Project::class, Module::class, DeviceEntity::class], version = 4)
+@Database (entities = [Project::class, Module::class, DeviceEntity::class], version = 5)
 @TypeConverters (Converters::class)
 abstract class AppDatabase : RoomDatabase(){
     abstract fun projectDao() : ProjectDao
@@ -38,6 +38,12 @@ abstract class AppDatabase : RoomDatabase(){
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE devices ADD COLUMN sensor_type INTEGER NOT NULL DEFAULT -1")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
 
             return INSTANCE ?: synchronized(this) {
@@ -46,7 +52,7 @@ abstract class AppDatabase : RoomDatabase(){
                     AppDatabase::class.java,
                     "mainDatabase"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                 INSTANCE = instance
                 instance

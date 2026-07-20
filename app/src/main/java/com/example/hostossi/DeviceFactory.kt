@@ -23,7 +23,9 @@ object DeviceFactory {
             DeviceType.ROTATION_VECTOR -> RotationVectorSensor(context)
             DeviceType.STEP_COUNTER -> StepCounterSensor(context)
             DeviceType.HEART_RATE -> HeartRateSensor(context)
-            else -> null
+            else -> entity.sensorType
+                .takeIf { it >= 0 }
+                ?.let { GenericAndroidSensor(context, entity.type, it) }
         }
     }
 }

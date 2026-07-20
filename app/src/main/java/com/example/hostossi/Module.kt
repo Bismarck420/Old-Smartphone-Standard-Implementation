@@ -20,6 +20,7 @@ data class Module(
     @ColumnInfo("module_type") var moduleType : String = "",
     @ColumnInfo("value") var value: Double = 0.0,
     @ColumnInfo("unit") var unit: String = "",
+    @SerialName("device_list")
     @ColumnInfo("device_list") var deviceList: MutableList<DeviceEntity> = mutableListOf()
 ) {
     @Ignore var action: Action? = null

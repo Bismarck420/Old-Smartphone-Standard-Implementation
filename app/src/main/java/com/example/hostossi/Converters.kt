@@ -52,4 +52,16 @@ class Converters {
         return gson.fromJson(data, listType)
     }
 
+    @TypeConverter
+    fun doubleListToString(list: List<Float>): String {
+        return gson.toJson(list)
+    }
+
+    @TypeConverter
+    fun stringToDoubleList(data: String): List<Float> {
+        if (data == null) return emptyList()
+        val listType = object : com.google.gson.reflect.TypeToken<List<Float>>() {}.type
+        return gson.fromJson(data, listType)
+    }
+
 }

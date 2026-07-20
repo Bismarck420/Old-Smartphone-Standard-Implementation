@@ -15,6 +15,10 @@ data class DeviceEntity(
     @ColumnInfo("description") val description: String = "",
     @ColumnInfo("type") val type: DeviceType,
     @ColumnInfo("connection_type") val connectionType: ConnectionType,
-    @ColumnInfo("ip_address") val ipAddress: String = ""
+    @ColumnInfo("ip_address") val ipAddress: String = "",
+    /** Android's stable Sensor.TYPE_* value. -1 is used for non-phone devices. */
+    @ColumnInfo("sensor_type") val sensorType: Int = -1,
+    @ColumnInfo("values") var values: List<Float> = emptyList(),
+    @ColumnInfo("unit") var unit: String = ""
 
 )

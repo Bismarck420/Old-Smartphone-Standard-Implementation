@@ -20,6 +20,10 @@ suspend fun getAllOnce(): List<Project>
 
 @Transaction
 @Query("SELECT * FROM projects")
+fun getAllWithModules(): Flow<List<ProjectWithModules>>
+
+@Transaction
+@Query("SELECT * FROM projects")
 suspend fun getAllWithModulesOnce(): List<ProjectWithModules>
 
 @Transaction

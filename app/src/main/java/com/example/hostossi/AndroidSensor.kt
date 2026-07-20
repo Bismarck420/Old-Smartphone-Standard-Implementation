@@ -15,7 +15,12 @@ abstract class AndroidSensor(
 ) : MeasureableSensor(), SensorEventListener {
 
     override val doesSensorExist: Boolean
-        get() = context.packageManager.hasSystemFeature(sensorFeature)
+        get() = if (sensorFeature.isEmpty()) {
+            val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+            manager.getDefaultSensor(sensorType) != null
+        } else {
+            context.packageManager.hasSystemFeature(sensorFeature)
+        }
 
     private lateinit var sensorManager : SensorManager
     private var sensor : android.hardware.Sensor? = null
@@ -46,3 +51,10 @@ abstract class AndroidSensor(
 
     override fun onAccuracyChanged(p0: Sensor?, p1: Int) = Unit
 }
+
+/** Handles every Android sensor type that does not need a specialised wrapper. */
+class GenericAndroidSensor(
+    context: Context,
+    deviceType: DeviceType,
+    sensorType: Int
+) : AndroidSensor(context, "", deviceType, sensorType)

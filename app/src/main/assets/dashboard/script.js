@@ -32,8 +32,6 @@ async function loadProjects() {
             renderEmptyState();
         }
     } catch (error) {
-        // Silently log initial fetch errors or minor sync issues to avoid annoying the user
-        // unless it's a persistent failure.
         console.error('Error loading projects:', error);
     }
 }
@@ -91,97 +89,185 @@ function updateWidgetsDisplay(project) {
     }
 
     widgets.forEach(widget => {
-        grid.appendChild(createWidgetCard(widget, project.id));
+        grid.appendChild(createModuleCard(widget, project.id));
     });
 
     main.appendChild(grid);
 }
 
-function createWidgetCard(widget, projectId) {
+function createModuleCard(module, projectId) {
     const card = document.createElement('div');
-    card.className = 'rounded-lg border border-white/5 bg-[#1F2630] p-5 shadow-lg flex flex-col pointer-events-auto transition-transform hover:scale-[1.02]';
+    card.className = 'rounded-lg border border-white/5 bg-[#1F2630] p-5 shadow-lg flex flex-col pointer-events-auto transition-transform hover:scale-[1.01]';
+
+    const header = document.createElement('div');
+    header.className = 'flex justify-between items-start mb-4';
 
     const title = document.createElement('h3');
-    title.className = 'text-xs font-bold uppercase tracking-widest text-slate-500 mb-6';
-    title.textContent = widget.title || widget.module_title || 'Module';
-    card.appendChild(title);
+    title.className = 'text-xs font-bold uppercase tracking-widest text-slate-500';
+    title.textContent = module.module_title || 'Module';
+    header.appendChild(title);
 
-    const type = (widget.type || widget.module_type || '').toLowerCase();
-    const val = widget.value !== undefined ? widget.value : 0;
-
-    const content = document.createElement('div');
-    content.className = 'flex-1';
-
-    if (type === 'switch') {
-        const isActive = val === true || val === "true" || val === 1 || val === 1.0;
-
-        const container = document.createElement('div');
-        container.className = 'flex items-center justify-between w-full';
-
-        const statusText = document.createElement('span');
-        statusText.className = `text-sm font-semibold ${isActive ? 'text-blue-400' : 'text-slate-400'}`;
-        statusText.textContent = isActive ? 'Enabled' : 'Disabled';
-        container.appendChild(statusText);
-
-        const switchWrapper = document.createElement('div');
-        switchWrapper.style.cssText = `
-            width: 56px; height: 30px; background: ${isActive ? '#3b82f6' : '#334155'};
-            border-radius: 15px; padding: 3px; cursor: pointer; transition: background 0.3s;
-            position: relative; display: flex; align-items: center; pointer-events: auto;
-        `;
-
-        const knob = document.createElement('div');
-        knob.style.cssText = `
-            width: 24px; height: 24px; background: white; border-radius: 50%;
-            position: absolute; left: ${isActive ? '29px' : '3px'}; transition: 0.3s;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        `;
-
-        switchWrapper.appendChild(knob);
-        switchWrapper.onclick = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            toggleSwitch(projectId, widget.id, !isActive);
-        };
-
-        container.appendChild(switchWrapper);
-        content.appendChild(container);
-    } else if (type === 'temperature' || type === 'pressure' || type === 'radiation') {
-        const valDiv = document.createElement('div');
-        valDiv.className = 'text-4xl font-bold flex items-baseline gap-2';
-        valDiv.innerHTML = `${val} <span class="text-sm text-slate-500 font-normal">${widget.unit || ''}</span>`;
-        content.appendChild(valDiv);
-    } else if (type === 'air_quality') {
-        content.className = 'flex items-center gap-6';
-        content.innerHTML = `
-            <div style="width: 70px; height: 70px; border-radius: 50%; background: conic-gradient(#f97316 ${val}%, #334155 0); display: flex; align-items: center; justify-content: center;">
-                <div style="width: 56px; height: 56px; background: #1F2630; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
-                    <span style="font-size: 1rem; font-weight: bold;">${val}%</span>
-                </div>
-            </div>
-            <div class="text-xs text-slate-500 font-bold uppercase tracking-tighter">Harmful<br>Gases</div>
-        `;
-    } else {
-        const p = document.createElement('p');
-        p.className = 'text-sm text-slate-400 italic';
-        p.textContent = widget.description || 'Module details synced from host.';
-        content.appendChild(p);
+    if (module.module_type === 'Switch') {
+        const isActive = module.value === 1 || module.value === 1.0;
+        header.appendChild(createMasterSwitch(projectId, module.id, isActive));
     }
 
-    card.appendChild(content);
+    card.appendChild(header);
+
+    const devices = module.device_list || [];
+    if (devices.length === 0) {
+        const p = document.createElement('p');
+        p.className = 'text-sm text-slate-400 italic mt-2';
+        p.textContent = module.module_description || 'No sensors assigned.';
+        card.appendChild(p);
+    } else {
+        const deviceListContainer = document.createElement('div');
+        deviceListContainer.className = 'flex flex-col gap-4';
+
+        devices.forEach(device => {
+            deviceListContainer.appendChild(createDeviceRow(device));
+        });
+
+        card.appendChild(deviceListContainer);
+    }
+
     return card;
 }
 
-async function toggleSwitch(projectId, widgetId, newValue) {
-    console.log('Sending Toggle Request...');
+function createDeviceRow(device) {
+    const row = document.createElement('div');
+    row.className = 'bg-white/5 rounded-lg p-3 border border-white/5';
+    row.dataset.deviceId = device.id;
 
-    // Optimistic UI Update
+    const name = document.createElement('div');
+    name.className = 'text-[10px] font-bold text-slate-400 uppercase mb-2 flex items-center gap-2';
+    name.innerHTML = `<span>${getIconForType(device.type)}</span> ${device.name}`;
+    row.appendChild(name);
+
+    const dataContainer = document.createElement('div');
+    dataContainer.className = 'sensor-values';
+    renderSensorValues(dataContainer, device, device.values || []);
+
+    row.appendChild(dataContainer);
+    return row;
+}
+
+function sensorLabels(type, valueCount) {
+    const labels = {
+        ACCELEROMETER: ['X', 'Y', 'Z'], GYROSCOPE: ['X', 'Y', 'Z'], MAGNETIC_FIELD: ['X', 'Y', 'Z'],
+        GRAVITY: ['X', 'Y', 'Z'], LINEAR_ACCELERATION: ['X', 'Y', 'Z'], ORIENTATION: ['Azimuth', 'Pitch', 'Roll'],
+        ROTATION_VECTOR: ['X', 'Y', 'Z', 'Cos θ', 'Heading'], GAME_ROTATION_VECTOR: ['X', 'Y', 'Z', 'Cos θ'],
+        GEOMAGNETIC_ROTATION_VECTOR: ['X', 'Y', 'Z', 'Cos θ', 'Heading'],
+        ACCELEROMETER_UNCALIBRATED: ['X', 'Y', 'Z', 'Bias X', 'Bias Y', 'Bias Z'],
+        GYROSCOPE_UNCALIBRATED: ['X', 'Y', 'Z', 'Drift X', 'Drift Y', 'Drift Z'],
+        MAGNETIC_FIELD_UNCALIBRATED: ['X', 'Y', 'Z', 'Bias X', 'Bias Y', 'Bias Z'],
+        POSE_6DOF: ['X', 'Y', 'Z', 'qx', 'qy', 'qz']
+    };
+    return labels[type] || Array.from({ length: valueCount }, (_, index) => `Value ${index + 1}`);
+}
+
+function renderSensorValues(container, device, values) {
+    const numericValues = Array.isArray(values) ? values : [];
+    if (device.type === 'SWITCH') {
+        container.innerHTML = `<div class="text-blue-400 text-sm font-bold">${numericValues[0] == 1 ? 'ON' : 'OFF'}</div>`;
+        return;
+    }
+    if (numericValues.length <= 1) {
+        container.className = 'sensor-values';
+        const value = numericValues.length ? Number(numericValues[0]).toFixed(1) : '--';
+        container.innerHTML = `<div class="text-2xl font-bold flex items-baseline gap-1">${value}<span class="text-xs text-slate-500 font-normal">${device.unit || ''}</span></div>`;
+        return;
+    }
+    const labels = sensorLabels(device.type, numericValues.length);
+    container.className = 'sensor-values grid grid-cols-2 gap-2 sm:grid-cols-3';
+    container.innerHTML = numericValues.map((value, index) => `
+        <div class="rounded bg-black/10 px-2 py-1 text-center">
+            <div class="text-[9px] text-slate-500 font-bold">${labels[index] || `Value ${index + 1}`}</div>
+            <div class="text-sm font-mono font-bold text-blue-400">${Number(value).toFixed(2)}</div>
+        </div>`).join('');
+}
+
+async function loadSensorValues() {
+    try {
+        const response = await fetch('/sensor-values.json', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const valuesByDevice = payload.values || {};
+        Object.entries(valuesByDevice).forEach(([deviceId, values]) => {
+            const device = findDevice(deviceId);
+            const container = document.querySelector(`[data-device-id="${deviceId}"] .sensor-values`);
+            if (device && container) renderSensorValues(container, device, values);
+        });
+    } catch (error) {
+        console.debug('Sensor update unavailable:', error);
+    }
+}
+
+function findDevice(deviceId) {
+    for (const project of projects) {
+        for (const module of (project.widgets || project.moduleList || [])) {
+            const device = (module.device_list || []).find(item => item.id === deviceId);
+            if (device) return device;
+        }
+    }
+    return null;
+}
+
+function getIconForType(type) {
+    switch(type) {
+        case 'LIGHT_SENSOR': return '☀️';
+        case 'ACCELEROMETER': return '📏';
+        case 'GYROSCOPE': return '🔄';
+        case 'MAGNETIC_FIELD': return '🧲';
+        case 'PROXIMITY': return '📏';
+        case 'PRESSURE': return '⏲️';
+        case 'AMBIENT_TEMPERATURE': return '🌡️';
+        case 'RELATIVE_HUMIDITY': return '💧';
+        case 'GRAVITY': return '🌎';
+        case 'LINEAR_ACCELERATION': return '🚀';
+        case 'ROTATION_VECTOR': return '📐';
+        case 'STEP_COUNTER': return '👣';
+        case 'HEART_RATE': return '❤️';
+        case 'HEART_BEAT': return '💓';
+        case 'SWITCH': return '💡';
+        default: return '🔘';
+    }
+}
+
+function createMasterSwitch(projectId, moduleId, isActive) {
+    const switchWrapper = document.createElement('div');
+    switchWrapper.style.cssText = `
+        width: 44px; height: 24px; background: ${isActive ? '#3b82f6' : '#334155'};
+        border-radius: 12px; padding: 2px; cursor: pointer; transition: background 0.3s;
+        position: relative; display: flex; align-items: center;
+    `;
+
+    const knob = document.createElement('div');
+    knob.style.cssText = `
+        width: 20px; height: 20px; background: white; border-radius: 50%;
+        position: absolute; left: ${isActive ? '22px' : '2px'}; transition: 0.3s;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    `;
+
+    switchWrapper.appendChild(knob);
+    switchWrapper.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSwitch(projectId, moduleId, !isActive);
+    };
+
+    return switchWrapper;
+}
+
+async function toggleSwitch(projectId, moduleId, newValue) {
+    console.log('Toggling Switch...');
+
+    // Optimistic update
     const project = projects.find(p => p.id === projectId);
     if (project) {
-        const widgets = project.widgets || project.moduleList || [];
-        const widget = widgets.find(w => w.id === widgetId);
-        if (widget) {
-            widget.value = newValue ? 1.0 : 0.0;
+        const module = (project.moduleList || []).find(m => m.id === moduleId);
+        if (module) {
+            module.value = newValue ? 1.0 : 0.0;
             updateWidgetsDisplay(project);
         }
     }
@@ -190,19 +276,14 @@ async function toggleSwitch(projectId, widgetId, newValue) {
         const response = await fetch('/toggleSwitch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId, moduleId: widgetId, value: newValue })
+            body: JSON.stringify({ projectId, moduleId, value: newValue })
         });
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || `Status: ${response.status}`);
-        }
-
-        console.log('Toggle verified');
+        if (!response.ok) throw new Error(await response.text());
     } catch (e) {
         console.error('Toggle failed:', e);
         showToast(`Failed to toggle: ${e.message}`);
-        loadProjects(); // Rollback
+        loadProjects();
     }
 }
 
@@ -210,13 +291,10 @@ function showToast(msg) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
-    // Create toast with stable layout and inline styles for guaranteed visibility
     const toast = document.createElement('div');
-    // Using inline styles for the background to avoid dependency on Tailwind bundle
     toast.style.backgroundColor = '#1F2630';
     toast.style.border = '1px solid rgba(255, 255, 255, 0.1)';
     toast.className = 'relative text-white px-5 py-3 rounded-lg shadow-2xl flex items-center gap-3 animate-toast-in overflow-hidden max-w-md';
-    toast.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.4)';
     toast.style.minWidth = '280px';
 
     toast.innerHTML = `
@@ -229,14 +307,9 @@ function showToast(msg) {
 
     container.appendChild(toast);
 
-    // Auto-remove after 3.5 seconds
     setTimeout(() => {
         toast.classList.replace('animate-toast-in', 'animate-toast-out');
-
-        // Remove from DOM after transition finishes
-        setTimeout(() => {
-            toast.remove();
-        }, 300);
+        setTimeout(() => toast.remove(), 300);
     }, 3500);
 }
 
@@ -259,25 +332,6 @@ function renderError(msg) {
     }
 }
 
-// Initial load
 loadProjects();
-
-// Immediate second fetch after a short delay to catch the server if it just started
-setTimeout(loadProjects, 500);
-setTimeout(loadProjects, 2000);
-
-// Regular polling
 setInterval(loadProjects, 5000);
-
-// Force reload when window becomes visible
-window.addEventListener('focus', () => {
-    console.log('Window focused, reloading projects...');
-    loadProjects();
-});
-
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-        console.log('Visibility changed to visible, reloading projects...');
-        loadProjects();
-    }
-});
+setInterval(loadSensorValues, 250);

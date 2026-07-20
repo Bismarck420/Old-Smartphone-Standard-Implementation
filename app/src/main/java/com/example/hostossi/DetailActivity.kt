@@ -47,7 +47,11 @@ class DetailActivity : AppCompatActivity() {
     private lateinit var projectDao : ProjectDao
     private lateinit var moduleDao: ModuleDao
     private lateinit var deviceEntityDao: DeviceEntityDao
+    private var lastSyncTime = 0L
+    private val syncThrottleMs = 300L
 
+
+    private var activeSensors = mutableMapOf<String, MeasureableSensor>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,12 +86,12 @@ class DetailActivity : AppCompatActivity() {
 
     }
 
-    suspend fun fetchSensors(): List<String> {
+    suspend fun fetchSensors(): List<AndroidSensorDescriptor> {
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
         if (clientIpAddress.isBlank()) return emptyList()
 
-        val response: List<String> = client.get("http://$clientIpAddress:8080/sensors").body()
+        val response: List<AndroidSensorDescriptor> = client.get("http://$clientIpAddress:8080/sensors").body()
         return response
     }
 
@@ -125,54 +129,77 @@ class DetailActivity : AppCompatActivity() {
     fun updateModulesfromDB(){
         val projectId = selectedProjectId ?: return
         lifecycleScope.launch {
-
-
-            projectDao.getProjectWithModules(projectId).collect { projectWithModules -> //this will get called every time the Database changes
+            projectDao.getProjectWithModules(projectId).collect { projectWithModules ->
                 val project = projectWithModules?.project ?: return@collect
-                val modules = projectWithModules.modules
+                val modulesWithDevices = projectWithModules.modules
 
-                binding.moduleList.removeAllViews()
-                selectedProject = project
-                selectedProject!!.moduleList.clear()
-                binding.projectTitle.text = project.name
+                // Update global state
+                var globalProject = ProjectManager.findProject(projectId)
+                if (globalProject == null) {
+                    globalProject = project.copy()
+                    ProjectManager.projectList.add(globalProject)
+                }
 
-                val json = Json.encodeToString(selectedProject)
-                Log.d("json", json)
+                withContext(Dispatchers.Main) {
+                    globalProject.name = project.name
+                    globalProject.description = project.description
+                    
+                    // Sync modules list in memory
+                    val updatedModules = modulesWithDevices.map { mwd ->
+                        val freshModule = mwd.module
+                        val existingModule = globalProject.moduleList.find { it.id == freshModule.id }
+                        
+                        val m = if (existingModule != null) {
+                            existingModule.moduleTitle = freshModule.moduleTitle
+                            existingModule.description = freshModule.description
+                            existingModule.moduleType = freshModule.moduleType
+                            existingModule.value = freshModule.value
+                            existingModule.unit = freshModule.unit
+                            existingModule
+                        } else {
+                            freshModule.copy()
+                        }
+                        
+                        // Map units if missing
+                        m.deviceList = mwd.devices.map { device ->
+                            if (device.unit.isEmpty()) {
+                                device.unit = when(device.type) {
+                                    DeviceType.LIGHT_SENSOR -> "lx"
+                                    DeviceType.PRESSURE -> "hPa"
+                                    DeviceType.AMBIENT_TEMPERATURE -> "°C"
+                                    DeviceType.RELATIVE_HUMIDITY -> "%"
+                                    DeviceType.STEP_COUNTER -> "steps"
+                                    DeviceType.HEART_RATE -> "bpm"
+                                    else -> ""
+                                }
+                            }
+                            device
+                        }.toMutableList()
+                        m
+                    }
+                    globalProject.moduleList.clear()
+                    globalProject.moduleList.addAll(updatedModules)
+                    
+                    selectedProject = globalProject
+                    binding.moduleList.removeAllViews()
+                    binding.projectTitle.text = globalProject.name
+                }
 
-                for(module in modules) {
-                    selectedProject!!.moduleList.add(module) //Refreshes the local module list
-
-                    val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater) //creates new Module item
-
+                for(module in globalProject.moduleList) {
+                    val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
                     itemModuleBinding.moduleCard.id = View.generateViewId()
                     itemModuleBinding.moduleTitle.text = module.moduleTitle
                     itemModuleBinding.moduleDescription.text = module.description
                     styleModuleCard(itemModuleBinding, module.moduleType)
 
-                    // Fetch devices directly from DAO for this module
-                    val devices = withContext(Dispatchers.IO) {
-                        deviceEntityDao.getDevicesForModule(module.id)
-                    }
-                    module.deviceList = devices.toMutableList()
-
                     withContext(Dispatchers.Main){
-                        binding.moduleList.addView(itemModuleBinding.root) //adds the module to the list
-                        Log.d("module", "new module added!")
-
+                        binding.moduleList.addView(itemModuleBinding.root)
                     }
-                    addOnClickListeners(itemModuleBinding, module) //makes the module clickable
-
-                    //This also gets called when new sensors were added or removed
-                    //Logic for listening to the sensors will be implemented here
+                    addOnClickListeners(itemModuleBinding, module)
                     setSensorListeners(module)
-
-
-
                 }
-
             }
         }
-
     }
 
     private fun styleModuleCard(itemModuleBinding: ItemModuleBinding, moduleType: String) {
@@ -296,7 +323,7 @@ class DetailActivity : AppCompatActivity() {
     }
 
     private fun showSensorSelectionBottomSheet(
-        sensors: List<String>,
+        sensors: List<AndroidSensorDescriptor>,
         module: Module,
         itemModuleBinding: ItemModuleBinding
     ) {
@@ -317,9 +344,9 @@ class DetailActivity : AppCompatActivity() {
 
             val selectedSensors = module.deviceList.toMutableList()
 
-            sensors.forEach { sensorName ->
+            sensors.forEach { sensor ->
                 val chip = Chip(this@DetailActivity).apply {
-                    text = sensorName
+                    text = sensor.name
                     isCheckable = true
                     isCheckedIconVisible = true
                     
@@ -334,23 +361,35 @@ class DetailActivity : AppCompatActivity() {
                     setTextColor(textColor)
 
                     // Check if this sensor (by name) is already assigned to this module
-                    if (selectedSensors.any { it.name == sensorName }) {
+                    if (selectedSensors.any { it.sensorType == sensor.sensorType }) {
                         isChecked = true
                     }
 
                     setOnCheckedChangeListener { _, isChecked ->
                         if (isChecked) {
-                            if (selectedSensors.none { it.name == sensorName }) {
+                            if (selectedSensors.none { it.sensorType == sensor.sensorType }) {
+                                val type = sensor.type
+                                val unit = when(type) {
+                                    DeviceType.LIGHT_SENSOR -> "lx"
+                                    DeviceType.PRESSURE -> "hPa"
+                                    DeviceType.AMBIENT_TEMPERATURE -> "°C"
+                                    DeviceType.RELATIVE_HUMIDITY -> "%"
+                                    DeviceType.STEP_COUNTER -> "steps"
+                                    DeviceType.HEART_RATE -> "bpm"
+                                    else -> ""
+                                }
                                 val newDevice = DeviceEntity(
-                                    name = sensorName,
+                                    name = sensor.name,
                                     moduleId = module.id,
-                                    type = DeviceType.fromString(sensorName),
-                                    connectionType = ConnectionType.ANDROID // Assuming Android sensors from fetchSensors
+                                    type = type,
+                                    connectionType = ConnectionType.ANDROID,
+                                    sensorType = sensor.sensorType,
+                                    unit = unit
                                 )
                                 selectedSensors.add(newDevice)
                             }
                         } else {
-                            selectedSensors.removeAll { it.name == sensorName }
+                            selectedSensors.removeAll { it.sensorType == sensor.sensorType }
                         }
                     }
                 }
@@ -416,8 +455,46 @@ class DetailActivity : AppCompatActivity() {
     }
 
     fun setSensorListeners(module: Module){
-        for(device in module.deviceList){
+        clearSensorListeners(module)
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val hasRemoteClient = preferences.getString("client_IP", "")?.trim().orEmpty().isNotBlank()
+        for(device in module.deviceList){ 
+            // The linked client phone owns its own SensorManager and streams directly to its dashboard.
+            if (device.connectionType == ConnectionType.ANDROID && hasRemoteClient) continue
+            val sensor : MeasureableSensor? = DeviceFactory.create(this, device)
 
+            if (sensor != null) {
+                sensor.startListening()
+                activeSensors[device.id] = sensor
+
+                sensor.setOnSensorValuesChangedListener { value ->
+                    // 1. Update global in-memory state (used by website)
+                    ProjectManager.updateSensorValues(device.id, value)
+
+                    Log.d("test", "sensorvalue changed")
+
+
+                    // 2. Throttled sync to the web UI
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastSyncTime > syncThrottleMs) {
+                        lastSyncTime = currentTime
+                        KtorServer.syncSensorValuesToClient(this@DetailActivity, device.id, value)
+                        Log.d("test", "synced to client")
+                    }
+                }
+            }
         }
+    }
+
+    fun clearSensorListeners(module: Module) {
+        for(device in module.deviceList){ //clears all listeners
+            activeSensors.remove(device.id)?.stopListening()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activeSensors.values.forEach { it.stopListening() }
+        activeSensors.clear()
     }
 }

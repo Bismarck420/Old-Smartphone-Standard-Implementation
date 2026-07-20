@@ -165,36 +165,37 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
     fun updateUIfromDB() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                projectDao.getAll().collect { projects ->
+                projectDao.getAllWithModules().collect { projectsWithModules ->
+                    Log.d("test", "Collecting projects: " + projectsWithModules.size.toString())
+                    
+                    val fullProjects = projectsWithModules.map { pwm ->
+                        val p = pwm.project.copy()
+                        p.moduleList = pwm.modules.map { mwd ->
+                            val m = mwd.module.copy()
+                            m.deviceList = mwd.devices.toMutableList()
+                            m
+                        }.toMutableList()
+                        p
+                    }
+
+                    // Atomic update of global list
                     ProjectManager.projectList.clear()
-                    Log.d("test", "This is the total amount of projects: " + projects.size.toString())
+                    ProjectManager.projectList.addAll(fullProjects)
+
                     withContext(Dispatchers.Main){
                         binding.projectContainer.removeAllViews()
-                    }
-                    for (myProject in projects) {
-                        Log.d("test", "this project is called " + myProject.name)
-                        ProjectManager.projectList.add(myProject)
-
-                        withContext(Dispatchers.Main){
+                        for (myProject in fullProjects) {
                             val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
                             itemProjectBinding.projectTitle.text = myProject.name
                             itemProjectBinding.projectDescription.text = myProject.description
                             itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
-
                             itemProjectBinding.projectCard.setStrokeColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
 
                             setOnClickListeners(itemProjectBinding, myProject)
                             binding.projectContainer.addView(itemProjectBinding.root)
                         }
-
-                        Log.d("test", "added project to view")
-
                     }
-                    try {
-                        KtorServer.syncProjectsToClient(requireContext())
-                    } catch (e: Exception) {
-                        Log.e("ProjectView", "Failed to sync during UI update", e)
-                    }
+                    KtorServer.syncProjectsToClient(requireContext())
                 }
             } catch (e: Exception) {
                 Log.e("ProjectView", "Failed to update UI from DB", e)
