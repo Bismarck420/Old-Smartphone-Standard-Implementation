@@ -13,6 +13,7 @@ import java.util.UUID
 data class Module(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     @ColumnInfo("project_id") var projectId: String = "",
+    @ColumnInfo("display_order") var displayOrder: Int = 0,
     @SerialName("title")
     @ColumnInfo("module_title") var moduleTitle : String = "",
     @ColumnInfo("module_description") var description : String = "",

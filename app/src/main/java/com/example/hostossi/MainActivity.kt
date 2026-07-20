@@ -60,7 +60,7 @@ class MainActivity : AppCompatActivity() {
                 
                 val fullProjects = projectsWithModules.map { pwm ->
                     val p = pwm.project.copy()
-                    p.moduleList = pwm.modules.map { mwd ->
+                    p.moduleList = pwm.modules.sortedBy { it.module.displayOrder }.map { mwd ->
                         val m = mwd.module.copy()
                         m.deviceList = mwd.devices.toMutableList()
                         m

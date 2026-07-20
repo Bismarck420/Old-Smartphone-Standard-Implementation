@@ -15,7 +15,7 @@ interface ModuleDao {
     @Query("DELETE FROM modules")
     suspend fun deleteAll()
 
-    @Query("SELECT * FROM modules")
+    @Query("SELECT * FROM modules ORDER BY display_order, module_title")
     fun getAll(): Flow<List<Module>>
 
     @Query("SELECT * FROM modules WHERE id = :moduleId")
@@ -26,6 +26,14 @@ interface ModuleDao {
 
     @Update
     suspend fun updateModule(module: Module)
+
+    @Query("UPDATE modules SET display_order = :displayOrder WHERE id = :moduleId")
+    suspend fun updateDisplayOrder(moduleId: String, displayOrder: Int)
+
+    @Transaction
+    suspend fun updateModuleOrder(modules: List<Module>) {
+        modules.forEachIndexed { index, module -> updateDisplayOrder(module.id, index) }
+    }
 
     @Delete
     suspend fun delete(module: Module)

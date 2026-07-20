@@ -5,7 +5,9 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
+import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -18,10 +20,16 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.hostossi.databinding.ActivityDetailBinding
 import com.example.hostossi.databinding.ItemModuleBinding
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.chip.Chip
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -33,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.*
 import kotlinx.serialization.json.*
+import java.util.Collections
 
 class DetailActivity : AppCompatActivity() {
 
@@ -52,6 +61,9 @@ class DetailActivity : AppCompatActivity() {
 
 
     private var activeSensors = mutableMapOf<String, MeasureableSensor>()
+    private lateinit var moduleAdapter: ModuleAdapter
+    private lateinit var moduleTouchHelper: ItemTouchHelper
+    private var moduleDragStartPosition = RecyclerView.NO_POSITION
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -82,6 +94,7 @@ class DetailActivity : AppCompatActivity() {
         moduleDao = db.moduleDao()
         deviceEntityDao = db.peripheralDao()
 
+        setupModuleList()
         updateModulesfromDB()
 
     }
@@ -98,7 +111,7 @@ class DetailActivity : AppCompatActivity() {
     fun addNewGenericModule(view: View) {
         SnackbarUtils.showModernSnackbar(binding.root, "Generic Module added!", anchorView = binding.expandableFab)
 
-        val genericModule = Module()
+        val genericModule = Module(displayOrder = selectedProject?.moduleList?.size ?: 0)
         genericModule.moduleTitle = "empty Generic"
         genericModule.description = "A new empty module. Select a sensor from the client smartphone or scan an NFC Tag to fill data."
         genericModule.moduleType = "Generic"
@@ -114,7 +127,7 @@ class DetailActivity : AppCompatActivity() {
     fun addNewSwitchModule(view: View) {
         SnackbarUtils.showModernSnackbar(binding.root, "Switch Module added!", anchorView = binding.expandableFab)
 
-        val switchModule = Module()
+        val switchModule = Module(displayOrder = selectedProject?.moduleList?.size ?: 0)
         switchModule.moduleTitle = "empty Switch"
         switchModule.description = "A new empty switch module. Scan an NFC tag to connect the peripheral via bluetooth."
         switchModule.moduleType = "Switch"
@@ -145,7 +158,7 @@ class DetailActivity : AppCompatActivity() {
                     globalProject.description = project.description
                     
                     // Sync modules list in memory
-                    val updatedModules = modulesWithDevices.map { mwd ->
+                    val updatedModules = modulesWithDevices.sortedBy { it.module.displayOrder }.map { mwd ->
                         val freshModule = mwd.module
                         val existingModule = globalProject.moduleList.find { it.id == freshModule.id }
                         
@@ -181,29 +194,17 @@ class DetailActivity : AppCompatActivity() {
                     globalProject.moduleList.addAll(updatedModules)
                     
                     selectedProject = globalProject
-                    binding.moduleList.removeAllViews()
                     binding.projectTitle.text = globalProject.name
+                    moduleAdapter.submit(globalProject.moduleList)
                 }
 
-                for(module in globalProject.moduleList) {
-                    val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
-                    itemModuleBinding.moduleCard.id = View.generateViewId()
-                    itemModuleBinding.moduleTitle.text = module.moduleTitle
-                    itemModuleBinding.moduleDescription.text = module.description
-                    styleModuleCard(itemModuleBinding, module.moduleType)
-
-                    withContext(Dispatchers.Main){
-                        binding.moduleList.addView(itemModuleBinding.root)
-                    }
-                    addOnClickListeners(itemModuleBinding, module)
-                    setSensorListeners(module)
-                }
+                globalProject.moduleList.forEach(::setSensorListeners)
             }
         }
     }
 
     private fun styleModuleCard(itemModuleBinding: ItemModuleBinding, moduleType: String) {
-        val isSwitch = moduleType == "Switch"
+        val isSwitch = moduleType.equals("Switch", ignoreCase = true)
         val backgroundColor = itemModuleBinding.moduleCard.cardBackgroundColor.defaultColor
         val badgeBackgroundColor = if (isSwitch) R.color.switch_badge_background else R.color.generic_badge_background
         val badgeTextColor = if (isSwitch) R.color.switch_badge_text else R.color.generic_badge_text
@@ -211,7 +212,7 @@ class DetailActivity : AppCompatActivity() {
         val label = if (isSwitch) "SWITCH" else "GENERIC"
 
         itemModuleBinding.moduleCard.setCardBackgroundColor(backgroundColor)
-        itemModuleBinding.moduleCard.setStrokeColor(backgroundColor)
+        itemModuleBinding.moduleCard.setStrokeColor(ContextCompat.getColor(this, badgeBackgroundColor))
         itemModuleBinding.labelModuleType.setCardBackgroundColor(ContextCompat.getColor(this, badgeBackgroundColor))
         itemModuleBinding.labelModuleType.setStrokeColor(backgroundColor)
         itemModuleBinding.iconDisplay.setImageResource(icon)
@@ -249,7 +250,7 @@ class DetailActivity : AppCompatActivity() {
                     }
                     true
                 } else if (menuText == "Edit") {
-                    val isSwitch = genericModule.moduleType == "Switch"
+                    val isSwitch = genericModule.moduleType.equals("Switch", ignoreCase = true)
 
                     itemModuleBinding.moduleTitle.isVisible = false
                     itemModuleBinding.moduleDescription.isVisible = false
@@ -280,6 +281,10 @@ class DetailActivity : AppCompatActivity() {
                                 if (newName.isNotBlank()) {
                                     genericModule.moduleTitle = newName
                                     itemModuleBinding.moduleTitle.text = newName
+                                    ProjectManager.findProject(selectedProjectId ?: "")
+                                        ?.moduleList
+                                        ?.find { it.id == genericModule.id }
+                                        ?.moduleTitle = newName
                                     lifecycleScope.launch(Dispatchers.IO) {
                                         moduleDao.updateModule(genericModule)
                                         KtorServer.syncProjectsToClient(this@DetailActivity)
@@ -320,6 +325,58 @@ class DetailActivity : AppCompatActivity() {
                 }
             }
         }
+
+        itemModuleBinding.scanWIFI.setOnClickListener {
+            showEndpointDialog(genericModule)
+        }
+    }
+
+    private fun showEndpointDialog(module: Module) {
+        val existing = module.deviceList.firstOrNull {
+            it.connectionType == ConnectionType.WIFI || it.type == DeviceType.SWITCH
+        }
+        val input = EditText(this).apply {
+            hint = "192.168.1.42 or http://device.local/custom-endpoint"
+            setText(existing?.ipAddress.orEmpty())
+            setSingleLine(true)
+            val padding = (20 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding / 2, padding, padding / 2)
+        }
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("ESP8266 endpoint")
+            .setMessage("An IP sends POST requests to /relay. A complete URL is used unchanged.")
+            .setView(input)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save", null)
+            .create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val address = input.text.toString().trim()
+                if (address.isBlank()) {
+                    input.error = "Enter an IP address or URL"
+                    return@setOnClickListener
+                }
+                val endpoint = existing?.copy(ipAddress = address) ?: DeviceEntity(
+                    moduleId = module.id,
+                    name = "ESP8266",
+                    description = "HTTP switch endpoint",
+                    type = if (module.moduleType == "Switch") DeviceType.SWITCH else DeviceType.UNKNOWN,
+                    connectionType = ConnectionType.WIFI,
+                    ipAddress = address
+                )
+                module.deviceList.removeAll { it.id == endpoint.id || (module.moduleType == "Switch" && it.type == DeviceType.SWITCH) }
+                module.deviceList.add(endpoint)
+                lifecycleScope.launch(Dispatchers.IO) {
+                    deviceEntityDao.insertDevice(endpoint)
+                    KtorServer.syncProjectsToClient(this@DetailActivity)
+                }
+                SnackbarUtils.showModernSnackbar(binding.root, "ESP8266 endpoint saved", anchorView = binding.expandableFab)
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
     }
 
     private fun showSensorSelectionBottomSheet(
@@ -427,6 +484,147 @@ class DetailActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupModuleList() {
+        moduleAdapter = ModuleAdapter()
+        binding.moduleList.apply {
+            layoutManager = LinearLayoutManager(this@DetailActivity)
+            adapter = moduleAdapter
+            setHasFixedSize(false)
+            itemAnimator?.moveDuration = 220
+            itemAnimator?.changeDuration = 160
+        }
+
+        moduleTouchHelper = ItemTouchHelper(object : ItemTouchHelper.SimpleCallback(
+            ItemTouchHelper.UP or ItemTouchHelper.DOWN,
+            0
+        ) {
+            override fun isLongPressDragEnabled() = false
+
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                val from = viewHolder.bindingAdapterPosition
+                val to = target.bindingAdapterPosition
+                if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
+                moduleAdapter.move(from, to)
+                return true
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
+
+            override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
+                super.onSelectedChanged(viewHolder, actionState)
+                if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder is ModuleViewHolder) {
+                    moduleDragStartPosition = viewHolder.bindingAdapterPosition
+                    viewHolder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    viewHolder.binding.moduleCard.strokeWidth = resources.getDimensionPixelSize(R.dimen.drag_target_stroke)
+                    viewHolder.itemView.animate()
+                        .scaleX(1.035f).scaleY(1.035f).alpha(0.92f)
+                        .translationZ(resources.getDimension(R.dimen.drag_elevation))
+                        .setDuration(150).start()
+                    SnackbarUtils.showModernSnackbar(
+                        binding.root,
+                        "Move the module, then release to save",
+                        anchorView = binding.expandableFab
+                    )
+                }
+            }
+
+            override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
+                super.clearView(recyclerView, viewHolder)
+                (viewHolder as? ModuleViewHolder)?.binding?.moduleCard?.strokeWidth = 0
+                viewHolder.itemView.animate()
+                    .scaleX(1f).scaleY(1f).alpha(1f).translationZ(0f)
+                    .setDuration(180).start()
+                val endPosition = viewHolder.bindingAdapterPosition
+                if (moduleDragStartPosition != RecyclerView.NO_POSITION &&
+                    endPosition != RecyclerView.NO_POSITION &&
+                    moduleDragStartPosition != endPosition
+                ) {
+                    persistModuleOrder()
+                }
+                moduleDragStartPosition = RecyclerView.NO_POSITION
+            }
+        }).also { it.attachToRecyclerView(binding.moduleList) }
+    }
+
+    private fun persistModuleOrder() {
+        val orderedModules = moduleAdapter.orderedModules()
+            .onEachIndexed { index, module -> module.displayOrder = index }
+        selectedProject?.moduleList?.clear()
+        selectedProject?.moduleList?.addAll(orderedModules)
+        lifecycleScope.launch(Dispatchers.IO) {
+            moduleDao.updateModuleOrder(orderedModules)
+            KtorServer.syncProjectsToClient(this@DetailActivity)
+        }
+        SnackbarUtils.showModernSnackbar(
+            binding.root,
+            "Module order saved",
+            anchorView = binding.expandableFab
+        )
+    }
+
+    private inner class ModuleViewHolder(val binding: ItemModuleBinding) :
+        RecyclerView.ViewHolder(binding.root)
+
+    private inner class ModuleAdapter : RecyclerView.Adapter<ModuleViewHolder>() {
+        private val items = mutableListOf<Module>()
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ModuleViewHolder =
+            ModuleViewHolder(ItemModuleBinding.inflate(layoutInflater, parent, false))
+
+        override fun onBindViewHolder(holder: ModuleViewHolder, position: Int) {
+            val module = items[position]
+            holder.binding.apply {
+                moduleTitle.text = module.moduleTitle
+                moduleDescription.text = module.description
+                moduleCard.strokeWidth = 0
+                root.alpha = 1f
+                root.scaleX = 1f
+                root.scaleY = 1f
+                editableModuleTitle.isVisible = false
+                moduleTitle.isVisible = true
+                moduleDescription.isVisible = false
+                verticalMenu.isVisible = true
+                selectSensor.isVisible = false
+                scanWIFI.isVisible = false
+                styleModuleCard(this, module.moduleType)
+                addOnClickListeners(this, module)
+                moduleCard.setOnLongClickListener {
+                    moduleTouchHelper.startDrag(holder)
+                    true
+                }
+            }
+        }
+
+        override fun getItemCount() = items.size
+
+        fun submit(modules: List<Module>) {
+            val next = modules.sortedBy { it.displayOrder }
+            val previous = items.toList()
+            val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+                override fun getOldListSize() = previous.size
+                override fun getNewListSize() = next.size
+                override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    previous[oldItemPosition].id == next[newItemPosition].id
+                override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int) =
+                    previous[oldItemPosition] == next[newItemPosition]
+            })
+            items.clear()
+            items.addAll(next)
+            diff.dispatchUpdatesTo(this)
+        }
+
+        fun move(from: Int, to: Int) {
+            Collections.swap(items, from, to)
+            notifyItemMoved(from, to)
+        }
+
+        fun orderedModules(): List<Module> = items.toList()
+    }
+
     private fun setModuleActionsVisible(
         itemModuleBinding: ItemModuleBinding,
         moduleType: String,
@@ -434,7 +632,7 @@ class DetailActivity : AppCompatActivity() {
     ) {
         val visibility = if (isVisible) View.VISIBLE else View.GONE
 
-        itemModuleBinding.selectSensor.visibility = if (moduleType == "Generic") visibility else View.GONE
+        itemModuleBinding.selectSensor.visibility = if (moduleType.equals("Generic", ignoreCase = true)) visibility else View.GONE
         itemModuleBinding.scanWIFI.visibility = visibility
     }
 

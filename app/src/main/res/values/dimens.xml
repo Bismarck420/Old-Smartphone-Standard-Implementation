@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <dimen name="snackbar_margin">16dp</dimen>
+    <dimen name="drag_target_stroke">3dp</dimen>
+    <dimen name="drag_elevation">16dp</dimen>
 </resources>

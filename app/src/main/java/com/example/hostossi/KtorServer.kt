@@ -69,6 +69,11 @@ object KtorServer {
     private var sensorData = ""
     private val mainHandler = Handler(Looper.getMainLooper())
     private val activeClientSensors = mutableMapOf<String, MeasureableSensor>()
+    @Volatile private var lastProjectSyncAt: Long = 0L
+
+    fun isRunning(): Boolean = serverJob?.isActive == true
+    fun activeClientSensorCount(): Int = activeClientSensors.size
+    fun lastProjectSyncTimestamp(): Long = lastProjectSyncAt
 
     fun startServer(context: Context) {
         if (serverJob != null) return
@@ -99,6 +104,7 @@ object KtorServer {
                                 Log.d(TAG, "Received ${response.projects.size} projects via /syncProjects")
                                 ProjectManager.projectList.clear()
                                 ProjectManager.projectList.addAll(response.projects)
+                                lastProjectSyncAt = System.currentTimeMillis()
                                 startClientSensorListeners(context)
                                 call.respondText("Projects synced")
                             } catch (e: Exception) {
@@ -142,48 +148,33 @@ object KtorServer {
                                 val deviceMode = sharedPreferences.getString("deviceMode", "default")
                                 
                                 if (deviceMode == "client") {
-                                    val hostIp = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-                                    if (hostIp.isNotBlank()) {
-                                        Log.d(TAG, "Forwarding toggle to host: $hostIp")
-                                        try {
-                                            client.post("http://$hostIp:8080/toggleSwitch") {
-                                                contentType(ContentType.Application.Json)
-                                                setBody(req)
-                                            }
-                                            call.respondText("Forwarded")
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "Failed to forward toggle to host", e)
-                                            call.respondText("Host unreachable", status = HttpStatusCode.GatewayTimeout)
-                                        }
+                                    val module = ProjectManager.projectList.asSequence()
+                                        .flatMap { it.moduleList.asSequence() }
+                                        .firstOrNull { it.id == req.moduleId }
+                                    if (module == null) {
+                                        call.respondText("Module not found", status = HttpStatusCode.NotFound)
+                                        return@post
+                                    }
+                                    val targetCount = sendSwitchCommand(module.deviceList, req.value)
+                                    if (targetCount == 0) {
+                                        call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
                                     } else {
-                                        Log.e(TAG, "No host IP configured on client")
-                                        call.respondText("Host IP not set", status = HttpStatusCode.ServiceUnavailable)
+                                        module.value = if (req.value) 1.0 else 0.0
+                                        call.respondText("Success")
                                     }
                                 } else {
                                     val db = AppDatabase.getDatabase(context)
                                     val module = db.moduleDao().getModuleById(req.moduleId)
                                     if (module != null) {
+                                        val peripherals = db.peripheralDao().getDevicesForModule(module.id)
+                                        val targetCount = sendSwitchCommand(peripherals, req.value)
+                                        if (targetCount == 0) {
+                                            call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
+                                            return@post
+                                        }
                                         module.value = if (req.value) 1.0 else 0.0
                                         db.moduleDao().updateModule(module)
                                         Log.d(TAG, "Database updated for module ${module.id}")
-                                        
-                                        // ESP8266 Logic
-                                        val peripherals = db.peripheralDao().getDevicesForModule(module.id)
-                                        peripherals.forEach { p ->
-                                            if (p.ipAddress.isNotBlank()) {
-                                                clientScope.launch {
-                                                    try {
-                                                        Log.d(TAG, "Sending IOT command to ${p.ipAddress}")
-                                                        client.post("http://${p.ipAddress}/relay") {
-                                                            contentType(ContentType.Application.Json)
-                                                            setBody(mapOf("state" to if (req.value) "on" else "off"))
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        Log.e(TAG, "IOT Target unreachable: ${p.ipAddress}", e)
-                                                    }
-                                                }
-                                            }
-                                        }
                                         syncProjectsToClient(context)
                                         call.respondText("Success")
                                     } else {
@@ -395,6 +386,25 @@ object KtorServer {
                 Log.w(TAG, "Failed to sync sensor values", e)
             }
         }
+    }
+
+    private suspend fun sendSwitchCommand(devices: List<DeviceEntity>, enabled: Boolean): Int {
+        val targets = devices.mapNotNull { device ->
+            device.ipAddress.trim().takeIf { it.isNotEmpty() }
+        }
+        targets.forEach { address ->
+            val targetUrl = if (address.startsWith("http://") || address.startsWith("https://")) {
+                address
+            } else {
+                "http://$address/relay"
+            }
+            Log.d(TAG, "Sending switch command to $targetUrl")
+            client.post(targetUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("state" to if (enabled) "on" else "off"))
+            }
+        }
+        return targets.size
     }
 
     private suspend fun io.ktor.server.application.ApplicationCall.respondDashboardIndex(context: Context) {

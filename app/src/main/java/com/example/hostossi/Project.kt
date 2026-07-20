@@ -14,6 +14,7 @@ data class Project(
     @PrimaryKey val id: String = UUID.randomUUID().toString(),
     @ColumnInfo(name="peripheral_count") var peripCount: Int = 0,
     @ColumnInfo(name="name") var name: String = "",
+    @ColumnInfo(name="display_order") var displayOrder: Int = 0,
     @SerialName("widgets")
     @ColumnInfo(name="module_list") var moduleList: MutableList<Module> = mutableListOf(),
     @ColumnInfo(name="project_description") var description: String = "",

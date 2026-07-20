@@ -12,18 +12,18 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ProjectDao {
 
-@Query("SELECT * FROM projects")
+@Query("SELECT * FROM projects ORDER BY display_order, name")
 fun getAll(): Flow<List<Project>>
 
-@Query("SELECT * FROM projects")
+@Query("SELECT * FROM projects ORDER BY display_order, name")
 suspend fun getAllOnce(): List<Project>
 
 @Transaction
-@Query("SELECT * FROM projects")
+@Query("SELECT * FROM projects ORDER BY display_order, name")
 fun getAllWithModules(): Flow<List<ProjectWithModules>>
 
 @Transaction
-@Query("SELECT * FROM projects")
+@Query("SELECT * FROM projects ORDER BY display_order, name")
 suspend fun getAllWithModulesOnce(): List<ProjectWithModules>
 
 @Transaction
@@ -38,6 +38,14 @@ suspend fun insertProject(project: Project)
 
 @Update
 suspend fun updateProject(project: Project)
+
+@Query("UPDATE projects SET display_order = :displayOrder WHERE id = :projectId")
+suspend fun updateDisplayOrder(projectId: String, displayOrder: Int)
+
+@Transaction
+suspend fun updateProjectOrder(projects: List<Project>) {
+    projects.forEachIndexed { index, project -> updateDisplayOrder(project.id, index) }
+}
 
 @Delete
 suspend fun delete(project: Project)
