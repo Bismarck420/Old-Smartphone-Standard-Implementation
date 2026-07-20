@@ -1,26 +1,30 @@
 package com.example.hostossi
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.core.view.children
-import androidx.core.view.removeItemAt
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
 import com.example.hostossi.databinding.FragmentProjectViewBinding
 import com.example.hostossi.databinding.ItemProjectBinding
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.card.MaterialCardView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.sequences.forEach
+import java.util.UUID
 
 // TODO: Rename parameter arguments, choose names that match
 // the fragment initialization parameters, e.g. ARG_ITEM_NUMBER
@@ -77,22 +81,22 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         val deviceModeCard: MaterialCardView = requireActivity().findViewById(R.id.idDeviceModeCard)
         val deviceMode: TextView = requireActivity().findViewById(R.id.deviceMode)
+        val context = requireContext()
         if (name == "client") {
             Log.d("test", "entered client if")
-            deviceModeCard.strokeColor = resources.getColor(R.color.client_color)
-            deviceModeCard.setCardBackgroundColor(resources.getColor(R.color.client_color))
+            deviceModeCard.strokeColor = ContextCompat.getColor(context, R.color.client_color)
+            deviceModeCard.setCardBackgroundColor(ContextCompat.getColor(context, R.color.client_color))
             deviceMode.text = "Client"
 
         }
         else {
-            deviceModeCard.strokeColor = resources.getColor(R.color.host_color)
-            deviceModeCard.setCardBackgroundColor(resources.getColor(R.color.host_color))
+            deviceModeCard.strokeColor = ContextCompat.getColor(context, R.color.host_color)
+            deviceModeCard.setCardBackgroundColor(ContextCompat.getColor(context, R.color.host_color))
             deviceMode.text = "Host"
 
         }
 
         binding.swipeRefreshLayout.setOnRefreshListener {
-            synchronizeWithServer()
             binding.swipeRefreshLayout.isRefreshing = false
         }
     }
@@ -144,58 +148,66 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         ProjectManager.projectList.add(newProject)
         lifecycleScope.launch (Dispatchers.IO){
-            projectDao.insertProject(newProject)
-            Log.d("test", "addNewProject method")
+            try {
+                projectDao.insertProject(newProject)
+                Log.d("test", "addNewProject method")
+                KtorServer.syncProjectsToClient(requireContext())
+            } catch (e: Exception) {
+                Log.e("ProjectView", "Failed to add new project", e)
+                withContext(Dispatchers.Main) {
+                    SnackbarUtils.showModernSnackbar(binding.root, "Error saving project", anchorView = binding.btnAddnewProjectButton)
+                }
+            }
         }
         setOnClickListeners(itemProjectBinding, newProject)
-
-        binding.projectContainer.addView(itemProjectBinding.root)
     }
 
     fun updateUIfromDB() {
-        ProjectManager.projectList.clear()
-        Log.d("test", "entered updateUIfromDB")
         lifecycleScope.launch(Dispatchers.IO) {
-            projectDao.getAll().collect { projects ->
-                Log.d("test", "This is the total amount of projects: " + projects.size.toString())
-                withContext(Dispatchers.Main){
-                    binding.projectContainer.removeAllViews()
-                }
-                for (myProject in projects) {
-                    Log.d("test", "this project is called " + myProject.name)
-                    ProjectManager.projectList.add(myProject)
-
-                    val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
-                    itemProjectBinding.projectTitle.text = myProject.name
-                    itemProjectBinding.projectDescription.text = myProject.description
-
-                    //select project logic
-                    if (myProject.isSelectedProject) {
-                        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-                        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-                        ProjectManager.hostSelectedProject = myProject
-                    }
-                    else if (myProject.isSelectedProject == false){
-                        itemProjectBinding.idProjectSelected.visibility = View.GONE
-                        itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
+            try {
+                projectDao.getAllWithModules().collect { projectsWithModules ->
+                    Log.d("test", "Collecting projects: " + projectsWithModules.size.toString())
+                    
+                    val fullProjects = projectsWithModules.map { pwm ->
+                        val p = pwm.project.copy()
+                        p.moduleList = pwm.modules.map { mwd ->
+                            val m = mwd.module.copy()
+                            m.deviceList = mwd.devices.toMutableList()
+                            m
+                        }.toMutableList()
+                        p
                     }
 
-                    setOnClickListeners(itemProjectBinding, myProject)
+                    // Atomic update of global list
+                    ProjectManager.projectList.clear()
+                    ProjectManager.projectList.addAll(fullProjects)
 
                     withContext(Dispatchers.Main){
-                        binding.projectContainer.addView(itemProjectBinding.root)
+                        binding.projectContainer.removeAllViews()
+                        for (myProject in fullProjects) {
+                            val itemProjectBinding = ItemProjectBinding.inflate(layoutInflater)
+                            itemProjectBinding.projectTitle.text = myProject.name
+                            itemProjectBinding.projectDescription.text = myProject.description
+                            itemProjectBinding.projectCard.setCardBackgroundColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
+                            itemProjectBinding.projectCard.setStrokeColor(itemProjectBinding.projectCard.cardBackgroundColor.defaultColor)
+
+                            setOnClickListeners(itemProjectBinding, myProject)
+                            binding.projectContainer.addView(itemProjectBinding.root)
+                        }
                     }
-
-                    synchronizeWithServer()
-                    Log.d("test", "added project to view")
-
+                    KtorServer.syncProjectsToClient(requireContext())
+                }
+            } catch (e: Exception) {
+                Log.e("ProjectView", "Failed to update UI from DB", e)
+                withContext(Dispatchers.Main) {
+                    SnackbarUtils.showModernSnackbar(binding.root, "Database error", anchorView = binding.btnAddnewProjectButton)
                 }
             }
-
         }
     }
 
     fun setOnClickListeners(itemProjectBinding: ItemProjectBinding, project: Project){
+
         itemProjectBinding.projectCard.setOnClickListener {
             val visible = itemProjectBinding.projectDescription.visibility
 
@@ -217,26 +229,11 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         itemProjectBinding.verticalMenu.setOnClickListener {
             val popupMenu = PopupMenu(requireActivity(), itemProjectBinding.verticalMenu)
-            popupMenu.menu.add("Delete")
             popupMenu.menu.add("Edit")
-            popupMenu.menu.add("Select Project")
-            popupMenu.menu.add("Deselect Project")
-
-            popupMenu.menu.children.forEach {
-                if(it.title == "Select Project"){
-                    if(project.isSelectedProject){
-                        it.setVisible(false)
-                    }
-                }
-                else if(it.title == "Deselect Project"){
-                    if(project.isSelectedProject == false){
-                        it.setVisible(false)
-                    }
-                }
-            }
+            popupMenu.menu.add("Delete")
 
             popupMenu.setOnMenuItemClickListener { item ->
-                var menuText: String = item.title as String
+                val menuText: String = item.title as String
 
                 if (menuText == "Delete") {
                     binding.projectContainer.removeView(itemProjectBinding.root)
@@ -246,17 +243,48 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                     }
                     true
                 } else if (menuText == "Edit") {
-                    // TODO: make title & description editable
-                    true
-                } else if (menuText == "Select Project") {
-                    selectProject(project, itemProjectBinding, popupMenu)
+                    itemProjectBinding.projectTitle.isVisible = false
+                    itemProjectBinding.projectDescription.isVisible = false
+                    itemProjectBinding.openProjectButton.isVisible = false
+                    itemProjectBinding.verticalMenu.isVisible = false
+                    itemProjectBinding.editableProjectTitle.apply {
+                        isVisible = true
+                        setText(itemProjectBinding.projectTitle.text)
+                        requestFocus()
 
-                    true
-                }
-                else if(menuText =="Deselect Project"){
-                    deselectProject(project, itemProjectBinding, popupMenu) //
+                        post {
+                            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                            setSelection(text.length)
+                        }
 
+                        setOnEditorActionListener { _, actionId, _ ->
+                            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                                clearFocus()
+                                true
+                            } else false
+                        }
+
+                        setOnFocusChangeListener { _, hasFocus ->
+                            if (!hasFocus) {
+                                val newName = text.toString()
+                                if (newName.isNotBlank()) {
+                                    project.name = newName
+                                    itemProjectBinding.projectTitle.text = newName
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        projectDao.updateProject(project)
+                                    }
+                                }
+                                isVisible = false
+                                itemProjectBinding.projectTitle.isVisible = true
+                                itemProjectBinding.projectDescription.isVisible = true
+                                itemProjectBinding.openProjectButton.isVisible = true
+                                itemProjectBinding.verticalMenu.isVisible = true
+                            }
+                        }
+                    }
                     true
+
                 }
                 else {
                     false
@@ -266,52 +294,5 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
             popupMenu.show()
         }
-    }
-
-    fun selectProject(selectedProject : Project, itemProjectBinding: ItemProjectBinding, popupMenu: PopupMenu){
-        Log.d("test", "project selected")
-        lifecycleScope.launch (Dispatchers.IO){
-            selectedProject.isSelectedProject = true
-            projectDao.updateSelectedProject(selectedProject.id)
-        }
-
-        popupMenu.menu.children.forEach {
-            if(it.title == "Select Project") {
-                it.setVisible(false)
-            }
-            if(it.title == "Deselect Project"){
-                it.setVisible(true)
-            }
-        }
-
-        ProjectManager.hostSelectedProject = selectedProject
-        itemProjectBinding.idProjectSelected.visibility = View.VISIBLE
-        itemProjectBinding.projectCard.setCardBackgroundColor(resources.getColor(R.color.selected_back_color))
-
-        synchronizeWithServer()
-    }
-
-    fun deselectProject(deselectedProject : Project, itemProjectBinding: ItemProjectBinding, popupMenu: PopupMenu){
-        Log.d("test", "project deselected")
-        lifecycleScope.launch(Dispatchers.IO){
-            deselectedProject.isSelectedProject = false
-            val emptyProject : Project = Project()
-            ProjectManager.hostSelectedProject = emptyProject
-            projectDao.updateProject(deselectedProject)
-            synchronizeWithServer()
-        }
-
-        popupMenu.menu.children.forEach {
-            if(it.title == "Select Project") {
-                it.setVisible(true)
-            }
-            if(it.title == "Deselect Project"){
-                it.setVisible(false)
-            }
-        }
-    }
-
-    fun synchronizeWithServer(){
-        KtorServer.sendSelectedProject(requireContext())
     }
 }

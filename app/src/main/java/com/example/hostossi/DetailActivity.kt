@@ -1,40 +1,44 @@
 package com.example.hostossi
 
+import android.content.Context
+import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
-import android.widget.CheckBox
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.PopupMenu
-import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
-import androidx.room.Room
+import androidx.preference.PreferenceManager
 import com.example.hostossi.databinding.ActivityDetailBinding
 import com.example.hostossi.databinding.ItemModuleBinding
-import com.example.hostossi.databinding.SensorPopupBinding
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.chip.Chip
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.hooks.CallSetup.install
-import io.ktor.websocket.WebSocketDeflateExtension.Companion.install
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withContext
-
+import kotlinx.serialization.*
+import kotlinx.serialization.json.*
 
 class DetailActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityDetailBinding
-    private lateinit var sensorPopup: SensorPopupBinding
     private var selectedProject : Project?=null
+    private var selectedProjectId: String? = null
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json()
@@ -42,15 +46,18 @@ class DetailActivity : AppCompatActivity() {
     }
     private lateinit var projectDao : ProjectDao
     private lateinit var moduleDao: ModuleDao
-    private lateinit var peripheralDao: PeripheralDao
+    private lateinit var deviceEntityDao: DeviceEntityDao
+    private var lastSyncTime = 0L
+    private val syncThrottleMs = 300L
 
+
+    private var activeSensors = mutableMapOf<String, MeasureableSensor>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         binding = ActivityDetailBinding.inflate(layoutInflater)
-        sensorPopup = SensorPopupBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
@@ -59,9 +66,9 @@ class DetailActivity : AppCompatActivity() {
             insets
         }
 
-        val projectID = intent.getStringExtra("EXTRA_PROJECT_ID")
+        selectedProjectId = intent.getStringExtra("EXTRA_PROJECT_ID")
 
-        val project = projectID?.let{ProjectManager.findProject(it)}
+        val project = selectedProjectId?.let{ProjectManager.findProject(it)} //get currently focused project
         if(project != null){
             binding.projectTitle.text = project.name
             selectedProject = project
@@ -69,123 +76,148 @@ class DetailActivity : AppCompatActivity() {
         else
             binding.projectTitle.text = "Project not found"
 
-        val db = (application as MyApplication).dataBase
+        val db = (application as MyApplication).dataBase //get database
 
-        projectDao = db.projectDao()
+        projectDao = db.projectDao() //get interfaces
         moduleDao = db.moduleDao()
-        peripheralDao = db.peripheralDao()
+        deviceEntityDao = db.peripheralDao()
 
-        lifecycleScope.launch(Dispatchers.IO){
-            moduleDao.getAll().collect { modules ->
-                withContext(Dispatchers.Main){
-                    updateUIfromDB()
-                }
-                Log.d("testSmall", "Entered collect!")
-            }
-
-        }
-
+        updateModulesfromDB()
 
     }
 
-    suspend fun fetchSensors(): List<String> {
-        // 2. GET-Request absetzen und direkt als Liste empfangen
-        val response: List<String> = client.get("http://100.113.232.96:8080/sensors").body()
+    suspend fun fetchSensors(): List<AndroidSensorDescriptor> {
+        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
+        if (clientIpAddress.isBlank()) return emptyList()
+
+        val response: List<AndroidSensorDescriptor> = client.get("http://$clientIpAddress:8080/sensors").body()
         return response
     }
 
     fun addNewGenericModule(view: View) {
-        Toast.makeText(this, "Generic Module added!", Toast.LENGTH_SHORT).show()
-
-        val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
-        itemModuleBinding.moduleCard.id = View.generateViewId()
+        SnackbarUtils.showModernSnackbar(binding.root, "Generic Module added!", anchorView = binding.expandableFab)
 
         val genericModule = Module()
         genericModule.moduleTitle = "empty Generic"
         genericModule.description = "A new empty module. Select a sensor from the client smartphone or scan an NFC Tag to fill data."
-        genericModule.moduleType = moduleType.GENERIC
-        selectedProject?.moduleList?.add(genericModule)
-
-        itemModuleBinding.moduleTitle.text = genericModule.moduleTitle
-        itemModuleBinding.moduleDescription.text = genericModule.description
-        itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
-        itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_pip)
-
-
-        binding.moduleList.addView(itemModuleBinding.root)
-
-        addOnClickListeners(itemModuleBinding, genericModule)
+        genericModule.moduleType = "Generic"
+        genericModule.projectId = selectedProject!!.id
 
         lifecycleScope.launch(Dispatchers.IO){
             moduleDao.insertModule(genericModule)
-            projectDao.updateProject(selectedProject!!)
+            KtorServer.syncProjectsToClient(this@DetailActivity)
         }
 
     }
 
     fun addNewSwitchModule(view: View) {
-        Toast.makeText(this, "Switch Module added!", Toast.LENGTH_SHORT).show()
-
-        val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
-        itemModuleBinding.moduleCard.id = View.generateViewId()
+        SnackbarUtils.showModernSnackbar(binding.root, "Switch Module added!", anchorView = binding.expandableFab)
 
         val switchModule = Module()
         switchModule.moduleTitle = "empty Switch"
         switchModule.description = "A new empty switch module. Scan an NFC tag to connect the peripheral via bluetooth."
-        switchModule.moduleType = moduleType.SWITCH
-        selectedProject?.moduleList?.add(switchModule)
-
-        itemModuleBinding.moduleTitle.text = switchModule.moduleTitle
-        itemModuleBinding.moduleDescription.text = switchModule.description
-        itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
-        itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_switch)
-        itemModuleBinding.selectSensor.visibility = View.GONE
-
-
-        binding.moduleList.addView(itemModuleBinding.root)
-
-        addOnClickListeners(itemModuleBinding, switchModule)
+        switchModule.moduleType = "Switch"
+        switchModule.projectId = selectedProject!!.id
 
         lifecycleScope.launch(Dispatchers.IO){
             moduleDao.insertModule(switchModule)
-            projectDao.updateProject(selectedProject!!)
+            KtorServer.syncProjectsToClient(this@DetailActivity)
         }
     }
 
-    fun updateUIfromDB(){
+    fun updateModulesfromDB(){
+        val projectId = selectedProjectId ?: return
+        lifecycleScope.launch {
+            projectDao.getProjectWithModules(projectId).collect { projectWithModules ->
+                val project = projectWithModules?.project ?: return@collect
+                val modulesWithDevices = projectWithModules.modules
 
-        lifecycleScope.launch (Dispatchers.IO){
-            selectedProject!!.moduleList.clear()
-            binding.moduleList.removeAllViews()
+                // Update global state
+                var globalProject = ProjectManager.findProject(projectId)
+                if (globalProject == null) {
+                    globalProject = project.copy()
+                    ProjectManager.projectList.add(globalProject)
+                }
 
-            moduleDao.getAll().collect { modules ->
-                for(module in modules) {
-                    selectedProject!!.moduleList.add(module)
+                withContext(Dispatchers.Main) {
+                    globalProject.name = project.name
+                    globalProject.description = project.description
+                    
+                    // Sync modules list in memory
+                    val updatedModules = modulesWithDevices.map { mwd ->
+                        val freshModule = mwd.module
+                        val existingModule = globalProject.moduleList.find { it.id == freshModule.id }
+                        
+                        val m = if (existingModule != null) {
+                            existingModule.moduleTitle = freshModule.moduleTitle
+                            existingModule.description = freshModule.description
+                            existingModule.moduleType = freshModule.moduleType
+                            existingModule.value = freshModule.value
+                            existingModule.unit = freshModule.unit
+                            existingModule
+                        } else {
+                            freshModule.copy()
+                        }
+                        
+                        // Map units if missing
+                        m.deviceList = mwd.devices.map { device ->
+                            if (device.unit.isEmpty()) {
+                                device.unit = when(device.type) {
+                                    DeviceType.LIGHT_SENSOR -> "lx"
+                                    DeviceType.PRESSURE -> "hPa"
+                                    DeviceType.AMBIENT_TEMPERATURE -> "°C"
+                                    DeviceType.RELATIVE_HUMIDITY -> "%"
+                                    DeviceType.STEP_COUNTER -> "steps"
+                                    DeviceType.HEART_RATE -> "bpm"
+                                    else -> ""
+                                }
+                            }
+                            device
+                        }.toMutableList()
+                        m
+                    }
+                    globalProject.moduleList.clear()
+                    globalProject.moduleList.addAll(updatedModules)
+                    
+                    selectedProject = globalProject
+                    binding.moduleList.removeAllViews()
+                    binding.projectTitle.text = globalProject.name
+                }
 
+                for(module in globalProject.moduleList) {
                     val itemModuleBinding = ItemModuleBinding.inflate(layoutInflater)
-
                     itemModuleBinding.moduleCard.id = View.generateViewId()
                     itemModuleBinding.moduleTitle.text = module.moduleTitle
                     itemModuleBinding.moduleDescription.text = module.description
-                    itemModuleBinding.idLabel.text = "#" + itemModuleBinding.moduleCard.id.toString()
-
-                    if(module.moduleType == moduleType.GENERIC)
-                        itemModuleBinding.iconDisplay.setImageResource(R.drawable.stacks)
-                    else if(module.moduleType == moduleType.SWITCH)
-                        itemModuleBinding.iconDisplay.setImageResource(R.drawable.ic_switch)
-
-                    module.peripheralList = peripheralDao.getAllPeripherals() as MutableList<Peripheral>
+                    styleModuleCard(itemModuleBinding, module.moduleType)
 
                     withContext(Dispatchers.Main){
                         binding.moduleList.addView(itemModuleBinding.root)
                     }
                     addOnClickListeners(itemModuleBinding, module)
-
+                    setSensorListeners(module)
                 }
-
             }
         }
+    }
 
+    private fun styleModuleCard(itemModuleBinding: ItemModuleBinding, moduleType: String) {
+        val isSwitch = moduleType == "Switch"
+        val backgroundColor = itemModuleBinding.moduleCard.cardBackgroundColor.defaultColor
+        val badgeBackgroundColor = if (isSwitch) R.color.switch_badge_background else R.color.generic_badge_background
+        val badgeTextColor = if (isSwitch) R.color.switch_badge_text else R.color.generic_badge_text
+        val icon = if (isSwitch) R.drawable.ic_switch else R.drawable.ic_memory
+        val label = if (isSwitch) "SWITCH" else "GENERIC"
+
+        itemModuleBinding.moduleCard.setCardBackgroundColor(backgroundColor)
+        itemModuleBinding.moduleCard.setStrokeColor(backgroundColor)
+        itemModuleBinding.labelModuleType.setCardBackgroundColor(ContextCompat.getColor(this, badgeBackgroundColor))
+        itemModuleBinding.labelModuleType.setStrokeColor(backgroundColor)
+        itemModuleBinding.iconDisplay.setImageResource(icon)
+        itemModuleBinding.iconDisplay.setColorFilter(ContextCompat.getColor(this, badgeTextColor))
+        itemModuleBinding.moduleTypeLabel.text = label
+        itemModuleBinding.moduleTypeLabel.setTextColor(ContextCompat.getColor(this, badgeTextColor))
     }
 
     fun addOnClickListeners(itemModuleBinding: ItemModuleBinding, genericModule: Module){
@@ -194,32 +226,74 @@ class DetailActivity : AppCompatActivity() {
 
             if (visible == View.VISIBLE) {
                 itemModuleBinding.moduleDescription.visibility = View.GONE
-                itemModuleBinding.selectSensor.visibility = View.GONE
-                itemModuleBinding.scanNFC.visibility = View.GONE
-                itemModuleBinding.scanBluetooth.visibility = View.GONE
+                setModuleActionsVisible(itemModuleBinding, genericModule.moduleType, false)
             } else {
                 itemModuleBinding.moduleDescription.visibility = View.VISIBLE
-                itemModuleBinding.selectSensor.visibility = View.VISIBLE
-                itemModuleBinding.scanNFC.visibility = View.VISIBLE
-                itemModuleBinding.scanBluetooth.visibility = View.VISIBLE
+                setModuleActionsVisible(itemModuleBinding, genericModule.moduleType, true)
             }
         }
 
         itemModuleBinding.verticalMenu.setOnClickListener {
             val popupMenu = PopupMenu(this@DetailActivity, itemModuleBinding.verticalMenu)
-            popupMenu.menu.add("Delete")
             popupMenu.menu.add("Edit")
+            popupMenu.menu.add("Delete")
             popupMenu.show()
 
             popupMenu.setOnMenuItemClickListener { item ->
                 var menuText: String = item.title as String
 
                 if (menuText == "Delete") {
-                    binding.moduleList.removeView(itemModuleBinding.root)
-                    selectedProject!!.moduleList.remove(genericModule)
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        moduleDao.delete(genericModule)
+                        KtorServer.syncProjectsToClient(this@DetailActivity)
+                    }
                     true
                 } else if (menuText == "Edit") {
-                    // TODO: make title & description editable
+                    val isSwitch = genericModule.moduleType == "Switch"
+
+                    itemModuleBinding.moduleTitle.isVisible = false
+                    itemModuleBinding.moduleDescription.isVisible = false
+                    itemModuleBinding.verticalMenu.isVisible = false
+                    itemModuleBinding.scanWIFI.isVisible = false
+                    if(!isSwitch) itemModuleBinding.selectSensor.isVisible = false
+                    itemModuleBinding.editableModuleTitle.apply {
+                        isVisible = true
+                        setText(itemModuleBinding.moduleTitle.text)
+                        requestFocus()
+
+                        post {
+                            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                            imm.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                            setSelection(text.length)
+                        }
+
+                        setOnEditorActionListener { _, actionId, _ ->
+                            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                                clearFocus()
+                                true
+                            } else false
+                        }
+
+                        setOnFocusChangeListener { _, hasFocus ->
+                            if (!hasFocus) {
+                                val newName = text.toString()
+                                if (newName.isNotBlank()) {
+                                    genericModule.moduleTitle = newName
+                                    itemModuleBinding.moduleTitle.text = newName
+                                    lifecycleScope.launch(Dispatchers.IO) {
+                                        moduleDao.updateModule(genericModule)
+                                        KtorServer.syncProjectsToClient(this@DetailActivity)
+                                    }
+                                }
+                                isVisible = false
+                                itemModuleBinding.moduleTitle.isVisible = true
+                                itemModuleBinding.moduleDescription.isVisible = true
+                                itemModuleBinding.verticalMenu.isVisible = true
+                                itemModuleBinding.scanWIFI.isVisible = true
+                                if(!isSwitch) itemModuleBinding.selectSensor.isVisible = true
+                            }
+                        }
+                    }
                     true
                 } else {
                     false
@@ -233,70 +307,194 @@ class DetailActivity : AppCompatActivity() {
                 try {
                     val sensors = fetchSensors()
                     Log.d("Sensors", sensors.toString())
-                    Toast.makeText(this@DetailActivity, "Found sensors on client!", Toast.LENGTH_SHORT).show()
-
-                    sensorPopup.root.id = View.generateViewId()
-
-                    for (sensor in sensors) {
-                        val checkBox = CheckBox(this@DetailActivity)
-                        checkBox.text = sensor
-                        checkBox.id = View.generateViewId()
-                        sensorPopup.onBoardSensorContainer.addView(checkBox)
-
-                        checkBox.setOnCheckedChangeListener { button, bool ->
-                            if (bool) {
-                                val Peripheral = Peripheral(peripheralName=checkBox.text.toString())
-                                genericModule.selectedPeripherals.add(Peripheral)
-                                lifecycleScope.launch(Dispatchers.IO){
-                                    peripheralDao.insertPeripheral(Peripheral)
-                                }
-                            }
-                            else{
-                                genericModule.selectedPeripherals.remove(Peripheral(peripheralName=checkBox.text.toString()))
-                                lifecycleScope.launch(Dispatchers.IO){
-                                    peripheralDao.deletePeripheral(Peripheral(peripheralName=checkBox.text.toString()))
-                                }
-
-                            }
-                        }
-
+                    if (sensors.isEmpty()) {
+                        SnackbarUtils.showModernSnackbar(binding.root, "No sensors found. Check client connection.", anchorView = binding.expandableFab)
+                        return@launch
                     }
-
-                    binding.root.addView(sensorPopup.root)
-                    val params = ConstraintLayout.LayoutParams(
-                        ConstraintLayout.LayoutParams.MATCH_PARENT,
-                        ConstraintLayout.LayoutParams.MATCH_PARENT
-                    )
-                    sensorPopup.root.layoutParams = params
-                    sensorPopup.root.visibility = View.VISIBLE
-
-                    sensorPopup.cancelButton.setOnClickListener {
-                        binding.root.removeView(sensorPopup.root)
-                        genericModule.selectedPeripherals.clear()
-                    }
-                    sensorPopup.addSensorButton.setOnClickListener {
-                        //TODO: write logic for adding peripherals to module
-                        Toast.makeText(this@DetailActivity, "Added sensor to module!", Toast.LENGTH_SHORT).show()
-                        binding.root.removeView(sensorPopup.root)
-                        genericModule.peripheralList = genericModule.selectedPeripherals
-                        genericModule.description += "\n" + genericModule.selectedPeripherals.toString()
-                        itemModuleBinding.moduleDescription.text = genericModule.description
-                        genericModule.selectedPeripherals.clear()
-                    }
-
-
+                    Log.d("selectSensor", "showing bottom sheet for: " + genericModule.id)
+                    showSensorSelectionBottomSheet(sensors, genericModule, itemModuleBinding)
 
                 } catch (e: Exception) {
-                    // Fehlerbehandlung (z.B. Timeout oder falsche IP)
-                    Toast.makeText(this@DetailActivity, "Failed to fetch sensors from client!", Toast.LENGTH_SHORT).show()
+                    SnackbarUtils.showModernSnackbar(binding.root, "Failed to fetch sensors: ${e.localizedMessage}", anchorView = binding.expandableFab)
                     Log.e("Error", "Failed to fetch sensors: ${e.message}")
                 }
             }
         }
+    }
 
-        itemModuleBinding.scanBluetooth.setOnClickListener {
-            Toast.makeText(this, "Bluetooth scan started!", Toast.LENGTH_SHORT).show()
+    private fun showSensorSelectionBottomSheet(
+        sensors: List<AndroidSensorDescriptor>,
+        module: Module,
+        itemModuleBinding: ItemModuleBinding
+    ) {
+        lifecycleScope.launch {
+            // Fetch actual devices from DB
+            val currentDevices = withContext(Dispatchers.IO) {
+                deviceEntityDao.getDevicesForModule(module.id)
+            }
+            module.deviceList = currentDevices.toMutableList()
+
+            val bottomSheetDialog = BottomSheetDialog(this@DetailActivity)
+            val view = layoutInflater.inflate(R.layout.bottom_sheet_sensor_selection, binding.root, false)
+            bottomSheetDialog.setContentView(view)
+
+            val chipGroup = view.findViewById<com.google.android.material.chip.ChipGroup>(R.id.sensorChipGroup)
+            val btnAdd = view.findViewById<android.widget.Button>(R.id.btnAddSensors)
+            val btnCancel = view.findViewById<android.widget.Button>(R.id.btnCancel)
+
+            val selectedSensors = module.deviceList.toMutableList()
+
+            sensors.forEach { sensor ->
+                val chip = Chip(this@DetailActivity).apply {
+                    text = sensor.name
+                    isCheckable = true
+                    isCheckedIconVisible = true
+                    
+                    val selectedColor = ContextCompat.getColor(this@DetailActivity, R.color.accent_color)
+                    val unselectedColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_background)
+                    val textColor = ContextCompat.getColor(this@DetailActivity, R.color.generic_badge_text)
+                    
+                    chipBackgroundColor = android.content.res.ColorStateList(
+                        arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                        intArrayOf(selectedColor, unselectedColor)
+                    )
+                    setTextColor(textColor)
+
+                    // Check if this sensor (by name) is already assigned to this module
+                    if (selectedSensors.any { it.sensorType == sensor.sensorType }) {
+                        isChecked = true
+                    }
+
+                    setOnCheckedChangeListener { _, isChecked ->
+                        if (isChecked) {
+                            if (selectedSensors.none { it.sensorType == sensor.sensorType }) {
+                                val type = sensor.type
+                                val unit = when(type) {
+                                    DeviceType.LIGHT_SENSOR -> "lx"
+                                    DeviceType.PRESSURE -> "hPa"
+                                    DeviceType.AMBIENT_TEMPERATURE -> "°C"
+                                    DeviceType.RELATIVE_HUMIDITY -> "%"
+                                    DeviceType.STEP_COUNTER -> "steps"
+                                    DeviceType.HEART_RATE -> "bpm"
+                                    else -> ""
+                                }
+                                val newDevice = DeviceEntity(
+                                    name = sensor.name,
+                                    moduleId = module.id,
+                                    type = type,
+                                    connectionType = ConnectionType.ANDROID,
+                                    sensorType = sensor.sensorType,
+                                    unit = unit
+                                )
+                                selectedSensors.add(newDevice)
+                            }
+                        } else {
+                            selectedSensors.removeAll { it.sensorType == sensor.sensorType }
+                        }
+                    }
+                }
+                chipGroup.addView(chip)
+            }
+
+            btnCancel.setOnClickListener { bottomSheetDialog.dismiss() }
+
+            btnAdd.setOnClickListener {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    // Update DB
+                    deviceEntityDao.deleteDevicesForModule(module.id)
+                    selectedSensors.forEach { 
+                        deviceEntityDao.insertDevice(it)
+                    }
+                    
+                    withContext(Dispatchers.Main) {
+                        module.deviceList = selectedSensors
+                        module.description = "Sensors: " + selectedSensors.joinToString { it.name }
+                        itemModuleBinding.moduleDescription.text = module.description
+                        
+                        SnackbarUtils.showModernSnackbar(binding.root, "Added ${selectedSensors.size} sensors!", anchorView = binding.expandableFab)
+                        bottomSheetDialog.dismiss()
+                    }
+                    
+                    // Persist the updated module description
+                    moduleDao.updateModule(module)
+
+                    // Sync to client
+                    KtorServer.syncProjectsToClient(this@DetailActivity)
+                }
+            }
+
+            bottomSheetDialog.show()
         }
     }
-}
 
+    private fun setModuleActionsVisible(
+        itemModuleBinding: ItemModuleBinding,
+        moduleType: String,
+        isVisible: Boolean
+    ) {
+        val visibility = if (isVisible) View.VISIBLE else View.GONE
+
+        itemModuleBinding.selectSensor.visibility = if (moduleType == "Generic") visibility else View.GONE
+        itemModuleBinding.scanWIFI.visibility = visibility
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN) {
+            val v = currentFocus
+            if (v is EditText) {
+                val outRect = Rect()
+                v.getGlobalVisibleRect(outRect)
+                if (!outRect.contains(event.rawX.toInt(), event.rawY.toInt())) {
+                    v.clearFocus()
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.hideSoftInputFromWindow(v.windowToken, 0)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    fun setSensorListeners(module: Module){
+        clearSensorListeners(module)
+        val preferences = PreferenceManager.getDefaultSharedPreferences(this)
+        val hasRemoteClient = preferences.getString("client_IP", "")?.trim().orEmpty().isNotBlank()
+        for(device in module.deviceList){ 
+            // The linked client phone owns its own SensorManager and streams directly to its dashboard.
+            if (device.connectionType == ConnectionType.ANDROID && hasRemoteClient) continue
+            val sensor : MeasureableSensor? = DeviceFactory.create(this, device)
+
+            if (sensor != null) {
+                sensor.startListening()
+                activeSensors[device.id] = sensor
+
+                sensor.setOnSensorValuesChangedListener { value ->
+                    // 1. Update global in-memory state (used by website)
+                    ProjectManager.updateSensorValues(device.id, value)
+
+                    Log.d("test", "sensorvalue changed")
+
+
+                    // 2. Throttled sync to the web UI
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastSyncTime > syncThrottleMs) {
+                        lastSyncTime = currentTime
+                        KtorServer.syncSensorValuesToClient(this@DetailActivity, device.id, value)
+                        Log.d("test", "synced to client")
+                    }
+                }
+            }
+        }
+    }
+
+    fun clearSensorListeners(module: Module) {
+        for(device in module.deviceList){ //clears all listeners
+            activeSensors.remove(device.id)?.stopListening()
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activeSensors.values.forEach { it.stopListening() }
+        activeSensors.clear()
+    }
+}

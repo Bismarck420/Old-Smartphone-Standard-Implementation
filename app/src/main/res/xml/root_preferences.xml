@@ -26,6 +26,13 @@
 
     <PreferenceCategory app:title="@string/theme_title">
 
+        <ListPreference
+            app:defaultValue="system"
+            app:entries="@array/theme_entries"
+            app:entryValues="@array/theme_values"
+            app:key="theme_mode"
+            app:title="@string/theme_select_title"
+            app:useSimpleSummaryProvider="true" />
 
     </PreferenceCategory>
 
