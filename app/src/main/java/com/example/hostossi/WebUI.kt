@@ -27,6 +27,8 @@ class WebUI : Fragment() {
     
     private var _binding: FragmentWebUIBinding? = null
     private val binding get() = _binding!!
+    private var dashboardUrls: List<String> = emptyList()
+    private var dashboardUrlIndex: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,14 +102,20 @@ class WebUI : Fragment() {
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    handleError(view, error?.description?.toString() ?: "Connection failed")
+                if (request?.isForMainFrame == true && !hasError) {
+                    hasError = true
+                    if (!loadNextDashboardRoute()) {
+                        handleError(view, error?.description?.toString() ?: "Connection failed")
+                    }
                 }
             }
 
             override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, errorResponse: WebResourceResponse?) {
-                if (request?.isForMainFrame == true) {
-                    handleError(view, "Server error: ${errorResponse?.statusCode}")
+                if (request?.isForMainFrame == true && !hasError) {
+                    hasError = true
+                    if (!loadNextDashboardRoute()) {
+                        handleError(view, "Server error: ${errorResponse?.statusCode}")
+                    }
                 }
             }
 
@@ -181,6 +189,15 @@ class WebUI : Fragment() {
         }
     }
 
+    private fun loadNextDashboardRoute(): Boolean {
+        if (dashboardUrlIndex + 1 >= dashboardUrls.size || _binding == null) return false
+        dashboardUrlIndex += 1
+        val fallbackUrl = dashboardUrls[dashboardUrlIndex]
+        Log.w("WebUI", "Primary Client route failed, trying $fallbackUrl")
+        binding.webRenderer.loadUrl(fallbackUrl)
+        return true
+    }
+
     private fun refreshWebUI() {
         if (_binding == null) return
         
@@ -192,14 +209,16 @@ class WebUI : Fragment() {
         KtorServer.syncProjectsToClient(requireContext())
 
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireActivity())
-        val ipAddressKey = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
         val deviceMode = sharedPreferences.getString("deviceMode", "default")
 
-        val dashboardUrl = if (deviceMode == "client") {
-            "http://127.0.0.1:8080/"
+        dashboardUrls = if (deviceMode == "client") {
+            listOf("http://127.0.0.1:8080/")
         } else {
-            "http://$ipAddressKey:8080/"
+            ClientEndpointResolver.candidates(requireContext())
+                .map { endpoint -> "http://${endpoint.address}:8080/" }
         }
+        dashboardUrlIndex = 0
+        val dashboardUrl = dashboardUrls.firstOrNull() ?: "http://127.0.0.1:0/"
 
         Log.d("WebUI", "Refreshing WebUI: $dashboardUrl")
         binding.webRenderer.loadUrl(dashboardUrl)

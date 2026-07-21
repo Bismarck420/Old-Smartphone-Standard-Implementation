@@ -19,7 +19,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
-import androidx.preference.PreferenceManager
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -34,6 +33,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +51,11 @@ class DetailActivity : AppCompatActivity() {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json()
+        }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 2_500
+            requestTimeoutMillis = 5_000
+            socketTimeoutMillis = 5_000
         }
     }
     private lateinit var projectDao : ProjectDao
@@ -100,12 +105,9 @@ class DetailActivity : AppCompatActivity() {
     }
 
     suspend fun fetchSensors(): List<AndroidSensorDescriptor> {
-        val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-        if (clientIpAddress.isBlank()) return emptyList()
-
-        val response: List<AndroidSensorDescriptor> = client.get("http://$clientIpAddress:8080/sensors").body()
-        return response
+        return ClientEndpointResolver.withFallback(this) { endpoint ->
+            client.get("http://${endpoint.address}:8080/sensors").body<List<AndroidSensorDescriptor>>()
+        }.getOrElse { emptyList() }
     }
 
     fun addNewGenericModule(view: View) {
@@ -654,8 +656,7 @@ class DetailActivity : AppCompatActivity() {
 
     fun setSensorListeners(module: Module){
         clearSensorListeners(module)
-        val preferences = PreferenceManager.getDefaultSharedPreferences(this)
-        val hasRemoteClient = preferences.getString("client_IP", "")?.trim().orEmpty().isNotBlank()
+        val hasRemoteClient = ClientEndpointResolver.hasConfiguredClient(this)
         for(device in module.deviceList){ 
             // The linked client phone owns its own SensorManager and streams directly to its dashboard.
             if (device.connectionType == ConnectionType.ANDROID && hasRemoteClient) continue

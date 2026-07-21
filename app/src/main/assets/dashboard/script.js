@@ -9,7 +9,6 @@ const getModules = project => project?.widgets || project?.moduleList || [];
 const getDevices = module => module?.device_list || module?.deviceList || [];
 const getModuleType = module => String(module?.type || module?.module_type || module?.moduleType || 'Module');
 const getModuleTitle = module => module?.title || module?.module_title || module?.moduleTitle || 'Untitled module';
-const getModuleDescription = module => module?.module_description || module?.description || '';
 
 async function loadProjects() {
     try {
@@ -55,7 +54,6 @@ function selectProject(id, refreshSidebar = true) {
     if (!project) return;
     if (refreshSidebar) renderSidebar();
     document.getElementById('project-heading').textContent = project.name || 'Dashboard';
-    document.getElementById('project-subtitle').textContent = project.description || 'Live device overview';
     updateModuleDisplay(project);
 }
 
@@ -83,7 +81,7 @@ function createModuleCard(module, projectId) {
     const heading = document.createElement('div');
     const eyebrow = document.createElement('span');
     eyebrow.className = 'dashboard-card__eyebrow';
-    eyebrow.textContent = isSwitch ? 'ESP8266 control' : type;
+    eyebrow.textContent = isSwitch ? 'Switch' : 'Sensors';
     const title = document.createElement('h3');
     title.className = 'dashboard-card__title';
     title.textContent = getModuleTitle(module);
@@ -100,7 +98,7 @@ function createModuleCard(module, projectId) {
     if (!devices.length) {
         const empty = document.createElement('p');
         empty.className = 'dashboard-card__empty';
-        empty.textContent = getModuleDescription(module) || 'No sensors assigned.';
+        empty.textContent = 'No sensors assigned';
         card.appendChild(empty);
         return card;
     }
@@ -117,9 +115,7 @@ function createSwitchControl(module, projectId) {
     const wrapper = document.createElement('div');
     wrapper.className = 'switch-control';
     const copy = document.createElement('div');
-    copy.innerHTML = `<span class="switch-control__status ${enabled ? 'switch-control__status--on' : ''}">${enabled ? 'ON' : 'OFF'}</span><small></small>`;
-    const endpoint = getDevices(module).find(device => device.ipAddress)?.ipAddress;
-    copy.querySelector('small').textContent = endpoint ? `POST → ${endpoint}` : 'Configure an ESP8266 endpoint';
+    copy.innerHTML = `<span class="switch-control__status ${enabled ? 'switch-control__status--on' : ''}">${enabled ? 'On' : 'Off'}</span>`;
     const control = createMasterSwitch(projectId, module.id, enabled);
     wrapper.append(copy, control);
     return wrapper;
@@ -258,6 +254,8 @@ function clearChart() {
 function updateChartLegend() {
     const legend = document.getElementById('chart-legend');
     const empty = document.getElementById('chart-empty');
+    const panel = document.getElementById('timeline-panel');
+    panel.hidden = selectedSeries.size === 0;
     legend.replaceChildren();
     empty.hidden = selectedSeries.size > 0;
     selectedSeries.forEach(series => {
@@ -362,7 +360,9 @@ async function toggleSwitch(projectId, moduleId, enabled, button) {
     button.disabled = true;
     button.classList.toggle('dashboard-switch--on', enabled);
     try {
-        const response = await fetch('/toggleSwitch', {
+        // This page is served by the Client, which forwards the command to the
+        // configured ESP8266 endpoint on its local room network.
+        const response = await fetch('/client/toggleSwitch', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ projectId, moduleId, value: enabled })
         });

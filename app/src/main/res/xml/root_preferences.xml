@@ -24,6 +24,25 @@
 
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="Remote connectivity">
+
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="prefer_tailscale"
+            app:summary="Use the Client’s stable Tailscale address whenever both devices are connected"
+            app:title="Prefer Tailscale" />
+
+        <Preference
+            app:key="tailscale_status"
+            app:selectable="false"
+            app:title="Tailscale status" />
+
+        <Preference
+            app:key="tailscale_action"
+            app:title="Open Tailscale" />
+
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/theme_title">
 
         <ListPreference

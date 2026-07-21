@@ -1,6 +1,7 @@
 package com.example.hostossi
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.os.Bundle
 import android.util.Log
@@ -12,6 +13,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
@@ -114,9 +117,12 @@ class MainActivity : AppCompatActivity() {
         if(name == "client"){
             bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = true
             bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
-            
-            if (savedInstanceState == null) {
+
+            val controlPanelMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            configureControlPanelMode(controlPanelMode)
+            if (savedInstanceState == null || controlPanelMode) {
                 bottomNavigationView.selectedItemId = R.id.clientDashboard
+                if (controlPanelMode) setCurrentFragment(dashboardFragment)
             }
 
             KtorServer.startServer(this)
@@ -135,6 +141,18 @@ class MainActivity : AppCompatActivity() {
             Log.d("test", "i am now a host")
         }
 
+    }
+
+    private fun configureControlPanelMode(enabled: Boolean) {
+        binding.bottomNavigationView.isVisible = !enabled
+        WindowInsetsControllerCompat(window, binding.root).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (enabled) {
+                hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
     }
 
     private fun setCurrentFragment(fragment: Fragment) =

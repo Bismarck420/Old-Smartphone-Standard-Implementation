@@ -1,162 +1,159 @@
 package com.example.hostossi
 
-import android.content.ContentValues
-import android.content.Context
-import android.content.Context.SENSOR_SERVICE
 import android.content.SharedPreferences
-import android.hardware.Sensor
-import android.hardware.SensorManager
 import android.os.Bundle
-import android.util.Log
-import android.view.View
-import android.webkit.WebView
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
-import androidx.core.content.ContextCompat.getSystemService
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.PreferenceManager
-import com.example.hostossi.databinding.ActivityMainBinding
 import com.google.android.material.bottomnavigation.BottomNavigationView
-import com.google.android.material.card.MaterialCardView
-import io.ktor.server.application.hooks.CallSetup.install
-import io.ktor.server.application.install
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.netty.Netty
-import io.ktor.server.response.respond
-import io.ktor.server.routing.get
-import io.ktor.server.routing.routing
-import io.ktor.websocket.WebSocketDeflateExtension.Companion.install
 import kotlinx.coroutines.launch
-import kotlin.concurrent.thread
-import kotlin.coroutines.EmptyCoroutineContext.get
-
 
 class SettingsFragment : PreferenceFragmentCompat(),
-    SharedPreferences.OnSharedPreferenceChangeListener
-    { // Schnittstelle hinzufügen
+    SharedPreferences.OnSharedPreferenceChangeListener {
 
-        override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
-            setPreferencesFromResource(R.xml.root_preferences, rootKey)
+    override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
+        setPreferencesFromResource(R.xml.root_preferences, rootKey)
+        configureModePreferences()
+        configureClientAddressPreference()
 
-            val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireActivity())
-            val name = sharedPreferences.getString("deviceMode", "")
+        findPreference<Preference>("scan_client")?.setOnPreferenceClickListener {
+            scanForClient()
+            true
+        }
+        findPreference<Preference>("tailscale_action")?.setOnPreferenceClickListener {
+            TailscaleIntegration.openOrInstall(requireContext())
+            true
+        }
+        refreshTailscalePreferences(forceRefresh = true)
+    }
 
-            if(name == "client"){
+    override fun onResume() {
+        super.onResume()
+        preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
+        refreshTailscalePreferences(forceRefresh = true)
+    }
 
-                val hostNamePref = findPreference<EditTextPreference>("client_IP")
-                hostNamePref?.isEnabled = false
-                findPreference<Preference>("scan_client")?.isEnabled = false
+    override fun onPause() {
+        preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
+        super.onPause()
+    }
 
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
+        when (key) {
+            "deviceMode" -> {
+                configureModePreferences()
+                applyDeviceMode(sharedPreferences.getString(key, "host"))
             }
-            else{
-                val hostNamePref = findPreference<EditTextPreference>("client_IP")
-                hostNamePref?.isEnabled = true
-                findPreference<Preference>("scan_client")?.isEnabled = true
-            }
+            "theme_mode" -> applyTheme(sharedPreferences.getString(key, "system"))
+            ClientEndpointResolver.KEY_PREFER_TAILSCALE -> refreshTailscalePreferences()
+        }
+    }
 
-            findPreference<Preference>("scan_client")?.setOnPreferenceClickListener {
-                scanForClient()
+    private fun configureModePreferences() {
+        val isClient = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getString("deviceMode", "host") == "client"
+        findPreference<EditTextPreference>(ClientEndpointResolver.KEY_CLIENT_ADDRESS)?.isEnabled = !isClient
+        findPreference<Preference>("scan_client")?.isEnabled = !isClient
+    }
+
+    private fun configureClientAddressPreference() {
+        findPreference<EditTextPreference>(ClientEndpointResolver.KEY_CLIENT_ADDRESS)
+            ?.setOnPreferenceChangeListener { _, newValue ->
+                ClientEndpointResolver.rememberManualAddress(requireContext(), newValue?.toString().orEmpty())
                 true
             }
+    }
 
-
+    private fun applyDeviceMode(mode: String?) {
+        val navigation: BottomNavigationView = requireActivity().findViewById(R.id.bottomNavigationView)
+        if (mode == "client") {
+            ProjectManager.hostSelectedProject = Project()
+            navigation.menu.findItem(R.id.clientDashboard).isVisible = true
+            navigation.menu.findItem(R.id.projects).isVisible = false
+            KtorServer.stopServer()
+            KtorServer.startServer(requireActivity())
+        } else {
+            navigation.menu.findItem(R.id.clientDashboard).isVisible = false
+            navigation.menu.findItem(R.id.projects).isVisible = true
+            KtorServer.stopServer()
         }
+    }
 
-        override fun onResume() {
-            super.onResume()
-            // Hier sagen wir: "Bitte informiere mich bei Änderungen"
-            preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(this)
-        }
-
-        override fun onPause() {
-            super.onPause()
-            // Wichtig: Wieder abmelden, um Speicherlecks zu vermeiden
-            preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(this)
-        }
-
-        override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
-            if (key == "deviceMode") {
-                val newValue = sharedPreferences.getString(key, "Default")
-                val navView : BottomNavigationView = requireActivity().findViewById(R.id.bottomNavigationView)
-
-                if(newValue == "client"){
-                    ProjectManager.hostSelectedProject = Project()
-
-                    navView.menu.findItem(R.id.clientDashboard).isVisible = true
-                    navView.menu.findItem(R.id.projects).isVisible = false
-                    val hostNamePref = findPreference<EditTextPreference>("client_IP")
-                    hostNamePref?.isEnabled = false
-                    findPreference<Preference>("scan_client")?.isEnabled = false
-
-                    getOnBoardSensors()
-
-                    KtorServer.stopServer()
-                    KtorServer.startServer(requireActivity())
-
-                    //TODO add web server capabilities
-                }
-                else if (newValue == "host"){
-                    navView.menu.findItem(R.id.clientDashboard).isVisible = false
-                    navView.menu.findItem(R.id.projects).isVisible = true
-                    val hostNamePref = findPreference<EditTextPreference>("client_IP")
-                    hostNamePref?.isEnabled = true
-                    findPreference<Preference>("scan_client")?.isEnabled = true
-
-                    // Completely stop the server when switching to Host mode
-                    // Host mode uses local database and ProjectViewFragment instead of the WebUI/Server
-                    KtorServer.stopServer()
-                }
-            } else if (key == "theme_mode") {
-                val themeValue = sharedPreferences.getString(key, "system")
-                applyTheme(themeValue)
-            }
-        }
-
-        private fun applyTheme(themeValue: String?) {
-            val mode = when (themeValue) {
+    private fun applyTheme(themeValue: String?) {
+        AppCompatDelegate.setDefaultNightMode(
+            when (themeValue) {
                 "light" -> AppCompatDelegate.MODE_NIGHT_NO
                 "dark" -> AppCompatDelegate.MODE_NIGHT_YES
                 else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
             }
-            AppCompatDelegate.setDefaultNightMode(mode)
-        }
+        )
+    }
 
-        private fun scanForClient() {
-            val scanPreference = findPreference<Preference>("scan_client")
-            scanPreference?.summary = "Scanning local network..."
-            scanPreference?.isEnabled = false
+    private fun refreshTailscalePreferences(forceRefresh: Boolean = false) {
+        if (!isAdded) return
+        val status = TailscaleIntegration.status(requireContext(), forceRefresh)
+        val endpoint = ClientEndpointResolver.resolve(requireContext())
+        val statusPreference = findPreference<Preference>("tailscale_status")
+        val actionPreference = findPreference<Preference>("tailscale_action")
 
-            viewLifecycleOwner.lifecycleScope.launch {
-                val clientIpAddress = NetworkDiscovery.findClient()
-                scanPreference?.isEnabled = true
-
-                val navView: BottomNavigationView? = activity?.findViewById(R.id.bottomNavigationView)
-
-                if (clientIpAddress == null) {
-                    scanPreference?.summary = "No client found"
-                    SnackbarUtils.showModernSnackbar(requireView(), "No hostOSSI client found", anchorView = navView)
-                    return@launch
+        statusPreference?.summary = buildString {
+            append(
+                when {
+                    !status.installed -> "Not installed"
+                    status.connected -> "Connected · This device: ${status.ipv4Address}"
+                    else -> "Installed · VPN connection inactive"
                 }
-
-                preferenceManager.sharedPreferences
-                    ?.edit()
-                    ?.putString("client_IP", clientIpAddress)
-                    ?.apply()
-
-                findPreference<EditTextPreference>("client_IP")?.text = clientIpAddress
-                scanPreference?.summary = "Found client at $clientIpAddress"
-                SnackbarUtils.showModernSnackbar(requireView(), "Client found: $clientIpAddress", anchorView = navView)
+            )
+            endpoint?.let {
+                append("\nClient route: ${it.address} via ${it.transport.displayName()}")
             }
         }
-
-        fun getOnBoardSensors(){
-            val sensorManager = requireContext().getSystemService(Context.SENSOR_SERVICE) as SensorManager
-            val deviceSensors: List<Sensor> = sensorManager.getSensorList(Sensor.TYPE_ALL)
-
+        actionPreference?.title = if (status.installed) "Open Tailscale" else "Install Tailscale"
+        actionPreference?.summary = if (status.installed) {
+            "Connect or review the VPN in the Tailscale app"
+        } else {
+            "Get the official Android app from Google Play"
         }
     }
+
+    private fun ClientTransport.displayName(): String = when (this) {
+        ClientTransport.TAILSCALE -> "Tailscale"
+        ClientTransport.LOCAL_NETWORK -> "local network"
+        ClientTransport.MANUAL -> "configured address"
+    }
+
+    private fun scanForClient() {
+        val scanPreference = findPreference<Preference>("scan_client")
+        scanPreference?.summary = "Scanning local network…"
+        scanPreference?.isEnabled = false
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val client = NetworkDiscovery.findClient()
+            scanPreference?.isEnabled = true
+            val navigation: BottomNavigationView? = activity?.findViewById(R.id.bottomNavigationView)
+
+            if (client == null) {
+                scanPreference?.summary = "No Client found"
+                SnackbarUtils.showModernSnackbar(requireView(), "No hostOSSI Client found", anchorView = navigation)
+                return@launch
+            }
+
+            ClientEndpointResolver.rememberDiscovery(requireContext(), client)
+            val endpoint = ClientEndpointResolver.resolve(requireContext())
+            scanPreference?.summary = if (client.tailscaleAddress != null) {
+                "Paired locally · Tailscale ${client.tailscaleAddress} saved"
+            } else {
+                "Found Client at ${client.lanAddress} · Tailscale unavailable"
+            }
+            refreshTailscalePreferences(forceRefresh = true)
+            SnackbarUtils.showModernSnackbar(
+                requireView(),
+                "Client route: ${endpoint?.address ?: client.lanAddress}",
+                anchorView = navigation
+            )
+        }
+    }
+}

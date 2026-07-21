@@ -9,11 +9,11 @@ import android.hardware.SensorManager
 import android.os.Handler
 import android.os.Looper
 import androidx.preference.PreferenceManager
-import com.google.gson.Gson
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -58,6 +58,11 @@ object KtorServer {
         install(ContentNegotiation) {
             json()
         }
+        install(HttpTimeout) {
+            connectTimeoutMillis = 2_500
+            requestTimeoutMillis = 5_000
+            socketTimeoutMillis = 5_000
+        }
     }
 
     private var serverJob: Job? = null
@@ -74,6 +79,19 @@ object KtorServer {
     fun isRunning(): Boolean = serverJob?.isActive == true
     fun activeClientSensorCount(): Int = activeClientSensors.size
     fun lastProjectSyncTimestamp(): Long = lastProjectSyncAt
+
+    /** Executes a room-control action directly from the native client dashboard. */
+    suspend fun controlClientSwitch(moduleId: String, enabled: Boolean): Result<Int> = runCatching {
+        val module = ProjectManager.projectList.asSequence()
+            .flatMap { it.moduleList.asSequence() }
+            .firstOrNull { it.id == moduleId }
+            ?: error("Switch module is no longer available")
+
+        val targetCount = sendSwitchCommand(module.deviceList, enabled)
+        if (targetCount == 0) error("No ESP8266 endpoint configured")
+        module.value = if (enabled) 1.0 else 0.0
+        targetCount
+    }
 
     fun startServer(context: Context) {
         if (serverJob != null) return
@@ -126,74 +144,23 @@ object KtorServer {
                             }
                         }
 
-                        post("/toggleSwitch") {
-                            try {
-                                val bodyText = call.receiveText()
-                                Log.d(TAG, "Incoming Toggle JSON: $bodyText")
-                                val req = try {
-                                    Gson().fromJson(bodyText, ToggleRequest::class.java)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Failed to parse toggle request", e)
-                                    null
-                                }
-                                
-                                if (req == null) {
-                                    call.respondText("Invalid JSON", status = HttpStatusCode.BadRequest)
-                                    return@post
-                                }
+                        // Legacy route remains available to older dashboard builds.
+                        post("/toggleSwitch") { handleSwitchRequest(call, context, clientOnly = false) }
 
-                                Log.d(TAG, "Toggle parsed: ${req.moduleId} -> ${req.value}")
-                                
-                                val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
-                                val deviceMode = sharedPreferences.getString("deviceMode", "default")
-                                
-                                if (deviceMode == "client") {
-                                    val module = ProjectManager.projectList.asSequence()
-                                        .flatMap { it.moduleList.asSequence() }
-                                        .firstOrNull { it.id == req.moduleId }
-                                    if (module == null) {
-                                        call.respondText("Module not found", status = HttpStatusCode.NotFound)
-                                        return@post
-                                    }
-                                    val targetCount = sendSwitchCommand(module.deviceList, req.value)
-                                    if (targetCount == 0) {
-                                        call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
-                                    } else {
-                                        module.value = if (req.value) 1.0 else 0.0
-                                        call.respondText("Success")
-                                    }
-                                } else {
-                                    val db = AppDatabase.getDatabase(context)
-                                    val module = db.moduleDao().getModuleById(req.moduleId)
-                                    if (module != null) {
-                                        val peripherals = db.peripheralDao().getDevicesForModule(module.id)
-                                        val targetCount = sendSwitchCommand(peripherals, req.value)
-                                        if (targetCount == 0) {
-                                            call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
-                                            return@post
-                                        }
-                                        module.value = if (req.value) 1.0 else 0.0
-                                        db.moduleDao().updateModule(module)
-                                        Log.d(TAG, "Database updated for module ${module.id}")
-                                        syncProjectsToClient(context)
-                                        call.respondText("Success")
-                                    } else {
-                                        Log.e(TAG, "Module ${req.moduleId} not found in DB")
-                                        call.respondText("Module not found", status = HttpStatusCode.NotFound)
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Critical toggle error", e)
-                                call.respondText("Internal Error: ${e.message}", status = HttpStatusCode.InternalServerError)
-                            }
-                        }
+                        // The current dashboard always calls the Client proxy. The Client then
+                        // reaches the ESP8266 over the room's local network.
+                        post("/client/toggleSwitch") { handleSwitchRequest(call, context, clientOnly = true) }
 
                         get("/discovery") {
                             val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
                             val deviceMode = sharedPreferences.getString("deviceMode", "default")
                             
                             if (deviceMode == "client") {
-                                call.respondText("hostossi-client")
+                                call.respond(
+                                    NetworkDiscovery.DiscoveryResponse(
+                                        tailscaleAddress = TailscaleIntegration.status(context).ipv4Address
+                                    )
+                                )
                             } else {
                                 // Hosts should not identify as clients for discovery
                                 call.respondText("hostossi-host", status = HttpStatusCode.OK)
@@ -330,61 +297,103 @@ object KtorServer {
 
     fun sendSelectedProject(context: Context) {
         clientScope.launch {
-            try {
-                val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
-                val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-                if (clientIpAddress.isBlank()) {
-                    Log.w(TAG, "No client IP configured, cannot send selected project")
-                    return@launch
-                }
-
-                client.post("http://$clientIpAddress:8080/selectedProject") {
+            val result = ClientEndpointResolver.withFallback(context) { endpoint ->
+                Log.d(TAG, "Sending selected project through ${endpoint.transport}: ${endpoint.address}")
+                client.post("http://${endpoint.address}:8080/selectedProject") {
                     contentType(ContentType.Application.Json)
                     setBody(ProjectManager.hostSelectedProject)
                 }
-            } catch (ex: Exception) {
-                Log.e(TAG, "Fehler beim Senden selectedProject", ex)
             }
+            result.exceptionOrNull()?.let { Log.e(TAG, "Failed to send selected project", it) }
         }
     }
 
     fun syncProjectsToClient(context: Context) {
         clientScope.launch {
-            try {
-                val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
-                val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-                if (clientIpAddress.isBlank()) {
-                    Log.w(TAG, "No client IP configured, cannot sync projects")
-                    return@launch
-                }
-
-                // Send the active in-memory list for live updates
-                val activeProjects = ProjectManager.projectList.toList()
-                
-                client.post("http://$clientIpAddress:8080/syncProjects") {
+            val activeProjects = ProjectManager.projectList.toList()
+            val result = ClientEndpointResolver.withFallback(context) { endpoint ->
+                Log.d(TAG, "Syncing projects through ${endpoint.transport}: ${endpoint.address}")
+                client.post("http://${endpoint.address}:8080/syncProjects") {
                     contentType(ContentType.Application.Json)
                     setBody(ProjectsResponse(activeProjects))
                 }
-            } catch (ex: Exception) {
-                Log.e(TAG, "Failed to sync projects to client", ex)
             }
+            result.exceptionOrNull()?.let { Log.e(TAG, "Failed to sync projects to client", it) }
         }
     }
 
     /** Sends only changing sensor samples; project structure is deliberately not touched. */
     fun syncSensorValuesToClient(context: Context, deviceId: String, values: List<Float>) {
         clientScope.launch {
-            try {
-                val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
-                val clientIpAddress = sharedPreferences.getString("client_IP", "")?.trim().orEmpty()
-                if (clientIpAddress.isBlank()) return@launch
-                client.post("http://$clientIpAddress:8080/sensor-values") {
+            val result = ClientEndpointResolver.withFallback(context) { endpoint ->
+                client.post("http://${endpoint.address}:8080/sensor-values") {
                     contentType(ContentType.Application.Json)
                     setBody(SensorValuesPayload(mapOf(deviceId to values)))
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to sync sensor values", e)
             }
+            result.exceptionOrNull()?.let { Log.w(TAG, "Failed to sync sensor values", it) }
+        }
+    }
+
+    private suspend fun handleSwitchRequest(
+        call: io.ktor.server.application.ApplicationCall,
+        context: Context,
+        clientOnly: Boolean
+    ) {
+        val request = try {
+            call.receive<ToggleRequest>()
+        } catch (failure: Exception) {
+            Log.w(TAG, "Invalid switch request", failure)
+            call.respondText("Invalid switch request", status = HttpStatusCode.BadRequest)
+            return
+        }
+
+        val deviceMode = PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("deviceMode", "default")
+        if (clientOnly && deviceMode != "client") {
+            call.respondText("Switch proxy is only available on a Client device", status = HttpStatusCode.Conflict)
+            return
+        }
+
+        try {
+            if (deviceMode == "client") {
+                val module = ProjectManager.projectList.asSequence()
+                    .flatMap { it.moduleList.asSequence() }
+                    .firstOrNull { it.id == request.moduleId }
+                if (module == null) {
+                    call.respondText("Module not found", status = HttpStatusCode.NotFound)
+                    return
+                }
+
+                val targetCount = sendSwitchCommand(module.deviceList, request.value)
+                if (targetCount == 0) {
+                    call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
+                    return
+                }
+                module.value = if (request.value) 1.0 else 0.0
+                call.respondText("Success")
+                return
+            }
+
+            val database = AppDatabase.getDatabase(context)
+            val module = database.moduleDao().getModuleById(request.moduleId)
+            if (module == null) {
+                call.respondText("Module not found", status = HttpStatusCode.NotFound)
+                return
+            }
+            val peripherals = database.peripheralDao().getDevicesForModule(module.id)
+            val targetCount = sendSwitchCommand(peripherals, request.value)
+            if (targetCount == 0) {
+                call.respondText("No ESP8266 endpoint configured", status = HttpStatusCode.ServiceUnavailable)
+                return
+            }
+            module.value = if (request.value) 1.0 else 0.0
+            database.moduleDao().updateModule(module)
+            syncProjectsToClient(context)
+            call.respondText("Success")
+        } catch (failure: Exception) {
+            Log.e(TAG, "Switch relay failed", failure)
+            call.respondText("Switch relay failed", status = HttpStatusCode.BadGateway)
         }
     }
 
