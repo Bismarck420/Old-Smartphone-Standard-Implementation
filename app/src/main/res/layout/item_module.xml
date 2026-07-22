@@ -33,7 +33,7 @@
                 android:paddingEnd="8dp"
                 app:layout_constraintTop_toTopOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toStartOf="@id/labelModuleType">
+                app:layout_constraintEnd_toStartOf="@id/managerIndicatorIcon">
 
             </TextView>
             <EditText
@@ -107,8 +107,59 @@
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="13sp"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/moduleTitle">
+                app:layout_constraintTop_toBottomOf="@id/managerBadge">
             </TextView>
+
+            <ImageView
+                android:id="@+id/managerIndicatorIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:layout_marginEnd="7dp"
+                android:contentDescription="Managed by ESP8266"
+                android:visibility="gone"
+                app:layout_constraintBottom_toBottomOf="@id/labelModuleType"
+                app:layout_constraintEnd_toStartOf="@id/labelModuleType"
+                app:layout_constraintTop_toTopOf="@id/labelModuleType"
+                app:srcCompat="@drawable/ic_wifi" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/managerStatusDot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:translationX="2dp"
+                android:translationY="2dp"
+                android:visibility="gone"
+                app:cardCornerRadius="4dp"
+                app:cardElevation="1dp"
+                app:layout_constraintBottom_toBottomOf="@id/managerIndicatorIcon"
+                app:layout_constraintEnd_toEndOf="@id/managerIndicatorIcon"
+                app:strokeColor="@color/generic_card_background"
+                app:strokeWidth="1dp" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/managerBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="26dp"
+                android:layout_marginStart="18dp"
+                android:layout_marginTop="6dp"
+                android:visibility="gone"
+                app:cardCornerRadius="13dp"
+                app:cardElevation="0dp"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/moduleTitle"
+                app:strokeWidth="0dp">
+
+                <TextView
+                    android:id="@+id/managerBadgeText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:maxLines="1"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+            </com.google.android.material.card.MaterialCardView>
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/scanWIFI"

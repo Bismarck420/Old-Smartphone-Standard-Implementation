@@ -68,18 +68,15 @@ class SettingsFragment : PreferenceFragmentCompat(),
     }
 
     private fun applyDeviceMode(mode: String?) {
-        val navigation: BottomNavigationView = requireActivity().findViewById(R.id.bottomNavigationView)
         if (mode == "client") {
             ProjectManager.hostSelectedProject = Project()
-            navigation.menu.findItem(R.id.clientDashboard).isVisible = true
-            navigation.menu.findItem(R.id.projects).isVisible = false
-            KtorServer.stopServer()
-            KtorServer.startServer(requireActivity())
+            KtorServer.resetForClientMode()
         } else {
-            navigation.menu.findItem(R.id.clientDashboard).isVisible = false
-            navigation.menu.findItem(R.id.projects).isVisible = true
-            KtorServer.stopServer()
+            KtorServer.stopHostSensorListeners()
+            ProjectManager.clearProjects()
         }
+        KtorServer.stopServer()
+        requireActivity().recreate()
     }
 
     private fun applyTheme(themeValue: String?) {

@@ -1,5 +1,8 @@
 let projects = [];
 let currentProjectId = null;
+let managerStatusKnown = false;
+let managersById = new Map();
+let managerInventorySignature = 'unknown';
 const sensorHistory = new Map();
 const selectedSeries = new Map();
 const chartColors = ['#6ee7ff', '#8b7cff', '#42e6a4', '#ffb86b', '#ff6b9d', '#d8f45b', '#b794f4', '#60a5fa'];
@@ -9,6 +12,114 @@ const getModules = project => project?.widgets || project?.moduleList || [];
 const getDevices = module => module?.device_list || module?.deviceList || [];
 const getModuleType = module => String(module?.type || module?.module_type || module?.moduleType || 'Module');
 const getModuleTitle = module => module?.title || module?.module_title || module?.moduleTitle || 'Untitled module';
+const getManagerId = device => device?.managerID || device?.manager_id || '';
+const getManagerPeripheralId = device => {
+    const explicit = device?.managerPeripheralId || device?.manager_peripheral_id || '';
+    if (explicit) return explicit;
+    return String(device?.description || '').match(/\(([^()]*)\)\s*$/)?.[1] || '';
+};
+const isAdvertisedSwitch = peripheral => {
+    const kind = String(peripheral?.kind || '').toLowerCase();
+    const type = String(peripheral?.type || '').toLowerCase();
+    return kind === 'switch' || type.includes('switch') || type.includes('relay');
+};
+const normalizeDeviceType = value => {
+    const type = String(value || '').toUpperCase().replaceAll(' ', '_');
+    if (type.includes('SWITCH') || type.includes('RELAY')) return 'SWITCH';
+    if (type.includes('HUMIDITY')) return 'RELATIVE_HUMIDITY';
+    if (type.includes('TEMPERATURE')) return 'AMBIENT_TEMPERATURE';
+    if (type.includes('PRESSURE') || type.includes('BAROMETER')) return 'PRESSURE';
+    if (type.includes('LIGHT')) return 'LIGHT_SENSOR';
+    if (type.includes('ACCEL')) return 'ACCELEROMETER';
+    if (type.includes('GYRO')) return 'GYROSCOPE';
+    if (type.includes('MAGNETIC')) return 'MAGNETIC_FIELD';
+    if (type.includes('PROXIMITY')) return 'PROXIMITY';
+    return type || 'UNKNOWN';
+};
+const managerStatusLabels = {
+    online: 'Online', offline: 'Manager offline', removed: 'Channel removed',
+    changed: 'Type changed', unknown: 'Unknown', unmanaged: 'Available'
+};
+
+function managerStatus(managerId, peripheralId, expectedType) {
+    if (!managerId) return 'unmanaged';
+    if (!managerStatusKnown) return 'unknown';
+    const manager = managersById.get(managerId);
+    if (!manager) return 'offline';
+    if (!peripheralId) return 'online';
+    const peripheral = (manager.devices || []).find(device => device.id === peripheralId);
+    if (!peripheral) return 'removed';
+    const expectsSwitch = normalizeDeviceType(expectedType) === 'SWITCH';
+    if (isAdvertisedSwitch(peripheral) !== expectsSwitch) return 'changed';
+    const currentType = normalizeDeviceType(peripheral.type);
+    const configuredType = normalizeDeviceType(expectedType);
+    return !expectsSwitch && currentType !== 'UNKNOWN' && configuredType !== 'UNKNOWN' && currentType !== configuredType
+        ? 'changed'
+        : 'online';
+}
+
+function managedDeviceStatus(device, expectsSwitch = device?.type === 'SWITCH') {
+    return managerStatus(
+        getManagerId(device),
+        getManagerPeripheralId(device),
+        expectsSwitch ? 'SWITCH' : device?.type
+    );
+}
+
+function isEndpointAvailable(state) {
+    return state === 'online' || state === 'unmanaged';
+}
+
+function inventorySignature(managers, known) {
+    if (!known) return 'unknown';
+    return JSON.stringify([...managers.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([id, manager]) => [
+        id,
+        manager.title,
+        manager.ipAddress,
+        manager.httpPort,
+        (manager.devices || []).map(device => [device.id, device.kind, device.type]).sort()
+    ]));
+}
+
+async function loadManagerStatuses() {
+    let nextManagers = new Map();
+    let nextKnown = false;
+    try {
+        const response = await fetch('/managers', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        nextManagers = new Map((payload.managers || []).map(manager => [manager.managerId, manager]));
+        nextKnown = true;
+    } catch (error) {}
+
+    const nextSignature = inventorySignature(nextManagers, nextKnown);
+    const changed = nextSignature !== managerInventorySignature;
+    managersById = nextManagers;
+    managerStatusKnown = nextKnown;
+    managerInventorySignature = nextSignature;
+    if (changed) {
+        const project = projects.find(item => item.id === currentProjectId);
+        if (project) updateModuleDisplay(project);
+    } else {
+        refreshManagerStatusIndicators();
+    }
+}
+
+function applyManagerStatus(element) {
+    const state = managerStatus(
+        element.dataset.managerId || '',
+        element.dataset.peripheralId || '',
+        element.dataset.expectedType || 'UNKNOWN'
+    );
+    const label = managerStatusLabels[state];
+    element.className = `dashboard-card__manager-state dashboard-card__manager-state--${state}`;
+    element.textContent = label;
+    element.title = `${element.dataset.managerName}: ${label}`;
+}
+
+function refreshManagerStatusIndicators() {
+    document.querySelectorAll('.dashboard-card__manager-state').forEach(applyManagerStatus);
+}
 
 async function loadProjects() {
     try {
@@ -19,15 +130,16 @@ async function loadProjects() {
 
         if (!projects.length) {
             currentProjectId = null;
+            resetTimeline();
             renderSidebar();
             renderEmptyState();
             return;
         }
-        if (!currentProjectId || !projects.some(project => project.id === currentProjectId)) {
-            currentProjectId = projects[0].id;
-        }
+        const nextProjectId = currentProjectId && projects.some(project => project.id === currentProjectId)
+            ? currentProjectId
+            : projects[0].id;
+        selectProject(nextProjectId, false);
         renderSidebar();
-        selectProject(currentProjectId, false);
     } catch (error) {
         console.error('Project load failed:', error);
         setConnectionState(false);
@@ -41,20 +153,49 @@ function renderSidebar() {
     projects.forEach(project => {
         const button = document.createElement('button');
         button.className = `project-nav-item ${project.id === currentProjectId ? 'project-nav-item--active' : ''}`;
-        button.innerHTML = `<span class="project-nav-item__mark"></span><span></span>`;
-        button.lastElementChild.textContent = project.name || 'Untitled project';
+        button.textContent = project.name || 'Untitled project';
         button.onclick = () => selectProject(project.id);
         container.appendChild(button);
     });
 }
 
 function selectProject(id, refreshSidebar = true) {
-    currentProjectId = id;
     const project = projects.find(item => item.id === id);
     if (!project) return;
+    const projectChanged = currentProjectId !== id;
+    currentProjectId = id;
+    scopeTimelineToProject(project, projectChanged);
     if (refreshSidebar) renderSidebar();
     document.getElementById('project-heading').textContent = project.name || 'Dashboard';
     updateModuleDisplay(project);
+}
+
+function projectDeviceIds(project) {
+    return new Set(getModules(project).flatMap(module => getDevices(module).map(device => device.id)));
+}
+
+function scopeTimelineToProject(project, reset = false) {
+    const validDeviceIds = projectDeviceIds(project);
+    if (reset) {
+        selectedSeries.clear();
+        sensorHistory.clear();
+    } else {
+        [...selectedSeries.entries()]
+            .filter(([, series]) => !validDeviceIds.has(series.deviceId))
+            .forEach(([key]) => selectedSeries.delete(key));
+        [...sensorHistory.keys()]
+            .filter(deviceId => !validDeviceIds.has(deviceId))
+            .forEach(deviceId => sensorHistory.delete(deviceId));
+    }
+    updateChartLegend();
+    drawTimeline();
+}
+
+function resetTimeline() {
+    selectedSeries.clear();
+    sensorHistory.clear();
+    updateChartLegend();
+    drawTimeline();
 }
 
 function updateModuleDisplay(project) {
@@ -71,26 +212,41 @@ function updateModuleDisplay(project) {
 }
 
 function createModuleCard(module, projectId) {
-    const type = getModuleType(module);
-    const isSwitch = type.toLowerCase() === 'switch';
+    const isSwitch = getModuleType(module).toLowerCase() === 'switch';
     const card = document.createElement('article');
     card.className = `dashboard-card ${isSwitch ? 'dashboard-card--switch' : ''}`;
 
     const header = document.createElement('header');
     header.className = 'dashboard-card__header';
-    const heading = document.createElement('div');
-    const eyebrow = document.createElement('span');
-    eyebrow.className = 'dashboard-card__eyebrow';
-    eyebrow.textContent = isSwitch ? 'Switch' : 'Sensors';
     const title = document.createElement('h3');
     title.className = 'dashboard-card__title';
     title.textContent = getModuleTitle(module);
-    heading.append(eyebrow, title);
-    header.appendChild(heading);
+    header.appendChild(title);
+    const managerDevice = getDevices(module).find(device => getManagerId(device));
+    const endpointState = managerDevice ? managedDeviceStatus(managerDevice, isSwitch) : 'unmanaged';
+    if (managerDevice) {
+        const managerMeta = document.createElement('div');
+        managerMeta.className = 'dashboard-card__manager-meta';
+        const managerId = getManagerId(managerDevice);
+        const managerName = managerDevice.sourceDeviceName || managerDevice.source_device_name || managerId;
+        const managerState = document.createElement('span');
+        managerState.dataset.managerId = managerId;
+        managerState.dataset.managerName = managerName;
+        managerState.dataset.peripheralId = getManagerPeripheralId(managerDevice);
+        managerState.dataset.expectedType = isSwitch ? 'SWITCH' : managerDevice.type;
+        applyManagerStatus(managerState);
+        const managerBadge = document.createElement('span');
+        managerBadge.className = 'dashboard-card__manager-icon';
+        managerBadge.title = `Manager · ${managerName}`;
+        managerBadge.setAttribute('aria-label', managerBadge.title);
+        managerBadge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12.6a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/></svg>';
+        managerMeta.append(managerState, managerBadge);
+        header.appendChild(managerMeta);
+    }
     card.appendChild(header);
 
     if (isSwitch) {
-        card.appendChild(createSwitchControl(module, projectId));
+        card.appendChild(createSwitchControl(module, projectId, endpointState));
         return card;
     }
 
@@ -110,43 +266,59 @@ function createModuleCard(module, projectId) {
     return card;
 }
 
-function createSwitchControl(module, projectId) {
+function createSwitchControl(module, projectId, endpointState) {
     const enabled = Number(module.value) === 1;
+    const available = isEndpointAvailable(endpointState);
     const wrapper = document.createElement('div');
     wrapper.className = 'switch-control';
     const copy = document.createElement('div');
-    copy.innerHTML = `<span class="switch-control__status ${enabled ? 'switch-control__status--on' : ''}">${enabled ? 'On' : 'Off'}</span>`;
-    const control = createMasterSwitch(projectId, module.id, enabled);
+    copy.innerHTML = available
+        ? `<span class="switch-control__status ${enabled ? 'switch-control__status--on' : ''}">${enabled ? 'On' : 'Off'}</span>`
+        : `<span class="switch-control__status switch-control__status--unavailable">${managerStatusLabels[endpointState]}</span>`;
+    const control = createMasterSwitch(projectId, module.id, enabled, !available);
+    if (!available) control.title = managerStatusLabels[endpointState];
     wrapper.append(copy, control);
     return wrapper;
 }
 
 function createDeviceRow(device) {
+    const endpointState = managedDeviceStatus(device, false);
+    const available = isEndpointAvailable(endpointState);
     const row = document.createElement('div');
-    row.className = 'dashboard-device';
+    row.className = `dashboard-device ${available ? '' : 'dashboard-device--unavailable'}`;
     row.dataset.deviceId = device.id;
 
     const header = document.createElement('div');
     header.className = 'dashboard-device__header';
     const name = document.createElement('div');
     name.className = 'dashboard-device__name';
-    name.innerHTML = getDashboardIconForType(device.type);
-    const label = document.createElement('span');
-    label.textContent = device.name || device.type || 'Sensor';
-    name.appendChild(label);
+    const sensorName = device.name || device.type || 'Sensor';
+    const sourceName = device.sourceDeviceName || device.source_device_name || '';
+    name.textContent = sourceName ? `${sensorName} · ${sourceName}` : sensorName;
+    name.title = name.textContent;
     const graphButton = document.createElement('button');
     graphButton.className = `graph-button ${hasDeviceSeries(device.id) ? 'graph-button--active' : ''}`;
     graphButton.type = 'button';
     graphButton.title = 'Add or remove from timeline';
+    graphButton.disabled = !available;
     graphButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 3 7-8"/><path d="M17 7h2v2"/></svg><span>Graph</span>';
     graphButton.onclick = () => toggleDeviceChart(device);
     header.append(name, graphButton);
 
     const values = document.createElement('div');
     values.className = 'sensor-values';
-    renderSensorValues(values, device, device.values || []);
+    if (available) {
+        renderSensorValues(values, device, device.values || []);
+    } else {
+        renderUnavailableSensor(values, endpointState);
+    }
     row.append(header, values);
     return row;
+}
+
+function renderUnavailableSensor(container, endpointState) {
+    container.className = 'sensor-values dashboard-endpoint-unavailable';
+    container.textContent = managerStatusLabels[endpointState];
 }
 
 function sensorLabels(type, count) {
@@ -185,8 +357,19 @@ async function loadSensorValues() {
         Object.entries(payload.values || {}).forEach(([deviceId, values]) => {
             const device = findDevice(deviceId);
             if (!device) return;
+            const endpointState = managedDeviceStatus(device, device.type === 'SWITCH');
+            if (!isEndpointAvailable(endpointState)) {
+                device.values = [];
+                sensorHistory.delete(deviceId);
+                selectedSeries.delete(deviceId);
+                const unavailableContainer = document.querySelector(`[data-device-id="${deviceId}"] .sensor-values`);
+                if (unavailableContainer) renderUnavailableSensor(unavailableContainer, endpointState);
+                return;
+            }
             device.values = values;
-            recordHistory(deviceId, now, values);
+            if (currentProjectId && findDeviceInProject(currentProjectId, deviceId)) {
+                recordHistory(deviceId, now, values);
+            }
             const container = document.querySelector(`[data-device-id="${deviceId}"] .sensor-values`);
             if (container) renderSensorValues(container, device, values);
         });
@@ -215,23 +398,41 @@ function findDevice(deviceId) {
     return null;
 }
 
+function findDeviceInProject(projectId, deviceId) {
+    const project = projects.find(item => item.id === projectId);
+    if (!project) return null;
+    for (const module of getModules(project)) {
+        const device = getDevices(module).find(item => item.id === deviceId);
+        if (device) return device;
+    }
+    return null;
+}
+
 function hasDeviceSeries(deviceId) {
-    return [...selectedSeries.values()].some(series => series.deviceId === deviceId);
+    return [...selectedSeries.values()].some(
+        series => series.projectId === currentProjectId && series.deviceId === deviceId
+    );
 }
 
 function toggleDeviceChart(device) {
+    if (!currentProjectId || !findDeviceInProject(currentProjectId, device.id)) return;
     if (hasDeviceSeries(device.id)) {
-        [...selectedSeries.entries()].filter(([, series]) => series.deviceId === device.id).forEach(([key]) => selectedSeries.delete(key));
+        [...selectedSeries.entries()]
+            .filter(([, series]) => series.projectId === currentProjectId && series.deviceId === device.id)
+            .forEach(([key]) => selectedSeries.delete(key));
     } else {
         const history = sensorHistory.get(device.id) || [];
         const latest = history.length ? history[history.length - 1].values : (device.values || [0]);
         const labels = sensorLabels(device.type, Math.max(1, latest.length));
+        const sourceName = device.sourceDeviceName || device.source_device_name || '';
+        const seriesName = sourceName ? `${device.name} (${sourceName})` : device.name;
         labels.slice(0, Math.max(1, latest.length)).forEach((axis, index) => {
             const key = `${device.id}:${index}`;
             selectedSeries.set(key, {
+                projectId: currentProjectId,
                 deviceId: device.id,
                 valueIndex: index,
-                label: `${device.name} · ${axis}`,
+                label: `${seriesName} · ${axis}`,
                 unit: device.unit || '',
                 color: chartColors[selectedSeries.size % chartColors.length]
             });
@@ -329,23 +530,13 @@ function drawTimeline() {
     });
 }
 
-function getDashboardIconForType(type) {
-    const paths = {
-        LIGHT_SENSOR: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/>',
-        HEART_RATE: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.9-8.6a5.5 5.5 0 0 0-.1-7.8Z"/>',
-        PRESSURE: '<path d="M4 14a8 8 0 1 1 16 0"/><path d="m12 14 3-4"/><path d="M7 18h10"/>',
-        STEP_COUNTER: '<path d="M7 4c2 0 3 2 3 4v5H6c-2 0-3-1-3-3V7c0-2 2-3 4-3Zm10 7c2 0 4 2 4 4v2c0 2-2 3-4 3h-4v-5c0-2 2-4 4-4Z"/>'
-    };
-    const path = paths[type] || '<path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="8"/>';
-    return `<svg class="dashboard-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
-}
-
-function createMasterSwitch(projectId, moduleId, enabled) {
+function createMasterSwitch(projectId, moduleId, enabled, disabled = false) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `dashboard-switch ${enabled ? 'dashboard-switch--on' : ''}`;
     button.setAttribute('role', 'switch');
     button.setAttribute('aria-checked', String(enabled));
+    button.disabled = disabled;
     button.innerHTML = '<span class="dashboard-switch__knob"></span>';
     button.onclick = () => toggleSwitch(projectId, moduleId, !enabled, button);
     return button;
@@ -403,7 +594,12 @@ document.getElementById('clear-chart').addEventListener('click', clearChart);
 window.addEventListener('resize', drawTimeline);
 if ('ResizeObserver' in window) new ResizeObserver(drawTimeline).observe(document.getElementById('timeline-chart'));
 updateChartLegend();
-loadProjects();
-loadSensorValues();
+async function bootstrapDashboard() {
+    await loadManagerStatuses();
+    await loadProjects();
+    loadSensorValues();
+}
+bootstrapDashboard();
 setInterval(loadProjects, 5000);
 setInterval(loadSensorValues, 250);
+setInterval(loadManagerStatuses, 3000);

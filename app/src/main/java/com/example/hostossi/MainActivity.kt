@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
         val themeValue = sharedPreferences.getString("theme_mode", "system")
+        val name = sharedPreferences.getString("deviceMode", "host")
         val mode = when (themeValue) {
             "light" -> AppCompatDelegate.MODE_NIGHT_NO
             "dark" -> AppCompatDelegate.MODE_NIGHT_YES
@@ -52,34 +53,36 @@ class MainActivity : AppCompatActivity() {
         projectViewBinding = FragmentProjectViewBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Pre-load projects into ProjectManager AND trigger a sync to the client
-        // to ensure other fragments (like WebUI) have access to data immediately on startup,
-        // without needing to visit ProjectViewFragment first.
         database = (this.application as MyApplication).dataBase
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                // We use getAllWithModulesOnce because the dashboard needs modules
-                val projectsWithModules = database.projectDao().getAllWithModulesOnce()
-                
-                val fullProjects = projectsWithModules.map { pwm ->
-                    val p = pwm.project.copy()
-                    p.moduleList = pwm.modules.sortedBy { it.module.displayOrder }.map { mwd ->
-                        val m = mwd.module.copy()
-                        m.deviceList = mwd.devices.toMutableList()
-                        m
-                    }.toMutableList()
-                    p
+        if (name == "host") {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val projectsWithModules = database.projectDao().getAllWithModulesOnce()
+                    val fullProjects = projectsWithModules.map { pwm ->
+                        val p = pwm.project.copy()
+                        p.moduleList = pwm.modules.sortedBy { it.module.displayOrder }.map { mwd ->
+                            val m = mwd.module.copy()
+                            m.deviceList = mwd.devices.toMutableList()
+                            m
+                        }.toMutableList()
+                        p
+                    }
+
+                    val stillHost = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                        .getString("deviceMode", "host") == "host"
+                    if (!stillHost) {
+                        Log.d("MainActivity", "Discarded Room projects after leaving Host mode")
+                        return@launch
+                    }
+                    ProjectManager.replaceProjects(fullProjects)
+                    Log.d("MainActivity", "Pre-loaded ${fullProjects.size} host projects")
+                    KtorServer.syncProjectsToClient(this@MainActivity)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Failed to pre-load projects", e)
                 }
-                
-                ProjectManager.projectList.clear()
-                ProjectManager.projectList.addAll(fullProjects)
-                Log.d("MainActivity", "Pre-loaded ${fullProjects.size} projects with modules and devices")
-                
-                // IMPORTANT: This triggers the background sync that the dashboard relies on
-                KtorServer.syncProjectsToClient(this@MainActivity)
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to pre-load projects", e)
             }
+        } else {
+            Log.d("MainActivity", "$name mode: skipped local Room project preload")
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
@@ -96,9 +99,6 @@ class MainActivity : AppCompatActivity() {
         val webUIFragment = WebUI()
         val dashboardFragment = ClientDashboard()
 
-        // get settings
-        val name = sharedPreferences.getString("deviceMode", "")
-
         // database functionality
         projectDao = database.projectDao()
         moduleDao = database.moduleDao()
@@ -114,31 +114,43 @@ class MainActivity : AppCompatActivity() {
             true
         }
 
-        if(name == "client"){
-            bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = true
-            bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
+        when (name) {
+            "client" -> {
+                bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = true
+                bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
 
-            val controlPanelMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-            configureControlPanelMode(controlPanelMode)
-            if (savedInstanceState == null || controlPanelMode) {
-                bottomNavigationView.selectedItemId = R.id.clientDashboard
-                if (controlPanelMode) setCurrentFragment(dashboardFragment)
+                val controlPanelMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                configureControlPanelMode(controlPanelMode)
+                if (savedInstanceState == null || controlPanelMode) {
+                    bottomNavigationView.selectedItemId = if (controlPanelMode) R.id.webui else R.id.clientDashboard
+                    if (controlPanelMode) setCurrentFragment(webUIFragment)
+                }
+                KtorServer.startServer(this)
             }
 
-            KtorServer.startServer(this)
-        }
-        else{
-            bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
-            bottomNavigationView.menu.findItem(R.id.projects).isVisible = true
-            
-            if (savedInstanceState == null) {
-                bottomNavigationView.selectedItemId = R.id.projects
+            "viewer" -> {
+                bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
+                bottomNavigationView.menu.findItem(R.id.projects).isVisible = false
+                bottomNavigationView.menu.findItem(R.id.webui).title = "Viewer"
+
+                val viewingPanelMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+                configureControlPanelMode(viewingPanelMode)
+                if (savedInstanceState == null || viewingPanelMode) {
+                    bottomNavigationView.selectedItemId = R.id.webui
+                    if (viewingPanelMode) setCurrentFragment(webUIFragment)
+                }
+                KtorServer.stopServer()
             }
 
-            // When in Host mode, we don't need the local dashboard server running
-            KtorServer.stopServer()
-
-            Log.d("test", "i am now a host")
+            else -> {
+                bottomNavigationView.menu.findItem(R.id.clientDashboard).isVisible = false
+                bottomNavigationView.menu.findItem(R.id.projects).isVisible = true
+                if (savedInstanceState == null) {
+                    bottomNavigationView.selectedItemId = R.id.projects
+                }
+                KtorServer.stopServer()
+                Log.d("test", "i am now a host")
+            }
         }
 
     }

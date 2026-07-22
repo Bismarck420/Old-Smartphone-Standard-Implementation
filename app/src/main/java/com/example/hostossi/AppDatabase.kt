@@ -8,12 +8,13 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database (entities = [Project::class, Module::class, DeviceEntity::class], version = 6)
+@Database (entities = [Project::class, Module::class, DeviceEntity::class, Manager::class], version = 9)
 @TypeConverters (Converters::class)
 abstract class AppDatabase : RoomDatabase(){
     abstract fun projectDao() : ProjectDao
     abstract fun moduleDao() : ModuleDao
     abstract fun peripheralDao() : DeviceEntityDao
+    abstract fun managerDao() : ManagerDao
 
     companion object {
         @Volatile
@@ -51,6 +52,27 @@ abstract class AppDatabase : RoomDatabase(){
             }
         }
 
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE devices ADD COLUMN source_device_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE devices ADD COLUMN source_device_name TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE devices ADD COLUMN manager_id TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE TABLE IF NOT EXISTS managers (id TEXT NOT NULL PRIMARY KEY, manager_id TEXT NOT NULL, title TEXT NOT NULL, device_list TEXT NOT NULL, ip_address TEXT NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_devices_manager_id ON devices(manager_id)")
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE devices ADD COLUMN manager_peripheral_id TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
 
             return INSTANCE ?: synchronized(this) {
@@ -59,7 +81,16 @@ abstract class AppDatabase : RoomDatabase(){
                     AppDatabase::class.java,
                     "mainDatabase"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7,
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
+                    )
                     .build()
                 INSTANCE = instance
                 instance

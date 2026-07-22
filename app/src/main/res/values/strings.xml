@@ -13,13 +13,17 @@
 
     <!-- Messages Preferences -->
     <string name="run_device_as_title">Run Device as</string>
+    <string name="viewer_title">Room viewer</string>
+    <string name="viewer_summary">Live dashboard · controls enabled</string>
     <string name="client_ip_title">Client IP Address</string>
     <string name="scan_client_title">Scan for Client</string>
     <string name="scan_client_summary">Find a client device in this network</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
     <string name="select_sensors_title">Select Sensors</string>
-    <string name="select_sensors_description">Choose the sensors found on your client device.</string>
+    <string name="select_sensors_description">Choose a phone first, then select its sensors.</string>
+    <string name="choose_sensor_device_prompt">Choose Host phone or Client phone above</string>
+    <string name="no_sensors_on_device">No sensors are available on this device.</string>
     <string name="add_sensors">Add Sensors</string>
     <string name="cancel">Cancel</string>
 

@@ -3,11 +3,13 @@
     <string-array name="device_entries">
         <item>Host</item>
         <item>Client</item>
+        <item>Viewer</item>
     </string-array>
 
     <string-array name="device_values">
         <item>host</item>
         <item>client</item>
+        <item>viewer</item>
     </string-array>
 
     <string-array name="theme_entries">

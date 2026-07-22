@@ -120,6 +120,8 @@ object ClientEndpointResolver {
     const val KEY_CLIENT_TAILSCALE_ADDRESS = "client_tailscale_IP"
     const val KEY_PREFER_TAILSCALE = "prefer_tailscale"
 
+    @Volatile private var lastSuccessfulAddress: String? = null
+
     fun resolve(context: Context): ResolvedClientEndpoint? = candidates(context).firstOrNull()
 
     fun candidates(context: Context): List<ResolvedClientEndpoint> {
@@ -156,9 +158,18 @@ object ClientEndpointResolver {
         operation: suspend (ResolvedClientEndpoint) -> T
     ): Result<T> {
         var lastFailure: Throwable = IllegalStateException("No Client address configured")
-        for (endpoint in candidates(context)) {
+        val availableEndpoints = candidates(context)
+        val successfulEndpoint = lastSuccessfulAddress?.let { address ->
+            availableEndpoints.firstOrNull { it.address == address }
+        }
+        val orderedEndpoints = listOfNotNull(successfulEndpoint) +
+            availableEndpoints.filterNot { it.address == successfulEndpoint?.address }
+
+        for (endpoint in orderedEndpoints) {
             try {
-                return Result.success(operation(endpoint))
+                val result = operation(endpoint)
+                lastSuccessfulAddress = endpoint.address
+                return Result.success(result)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {

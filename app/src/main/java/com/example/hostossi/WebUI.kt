@@ -1,6 +1,8 @@
 ﻿package com.example.hostossi
 
 import android.os.Bundle
+import android.content.res.Configuration
+import android.graphics.Color
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -14,6 +16,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.fragment.app.Fragment
 import androidx.preference.PreferenceManager
 import com.example.hostossi.databinding.FragmentWebUIBinding
@@ -49,9 +53,39 @@ class WebUI : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         _binding = FragmentWebUIBinding.bind(view)
-        
+
+        configureViewerChrome()
         setupWebView()
         refreshWebUI()
+    }
+
+    private fun configureViewerChrome() {
+        val mode = PreferenceManager.getDefaultSharedPreferences(requireContext())
+            .getString("deviceMode", "host")
+        val isViewer = mode == "viewer"
+        val immersiveWeb = (isViewer || mode == "client") &&
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+        binding.dashboard.text = if (isViewer) getString(R.string.viewer_title) else "OSSI Dashboard"
+        binding.dashboardSubtitle.text = if (isViewer) {
+            getString(R.string.viewer_summary)
+        } else if (mode == "client") {
+            "Local Client dashboard"
+        } else {
+            "Connected Client dashboard"
+        }
+        binding.viewerModeBadge.isVisible = isViewer && !immersiveWeb
+        binding.viewerModeBadge.setTextColor(Color.WHITE)
+        binding.dashboardHeader.isVisible = !immersiveWeb
+
+        if (immersiveWeb) {
+            binding.webCard.radius = 0f
+            binding.webCard.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                topToBottom = ConstraintLayout.LayoutParams.UNSET
+                topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                setMargins(0, 0, 0, 0)
+            }
+        }
     }
 
     private fun setupWebView() {
@@ -205,11 +239,12 @@ class WebUI : Fragment() {
         binding.webRenderer.stopLoading()
         binding.webViewProgressBar.isVisible = true
         
-        // Ensure the internal server is synced with the latest data from the database
-        KtorServer.syncProjectsToClient(requireContext())
-
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireActivity())
         val deviceMode = sharedPreferences.getString("deviceMode", "default")
+
+        if (deviceMode == "host") {
+            KtorServer.syncProjectsToClient(requireContext())
+        }
 
         dashboardUrls = if (deviceMode == "client") {
             listOf("http://127.0.0.1:8080/")

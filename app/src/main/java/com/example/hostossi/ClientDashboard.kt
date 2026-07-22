@@ -240,6 +240,7 @@ class ClientDashboard : Fragment() {
     ) : RecyclerView.Adapter<ControlModuleViewHolder>() {
         private var modules: List<Module> = emptyList()
         private var pending: Set<String> = emptySet()
+        private var managersById: Map<String, AdvertisedManager> = emptyMap()
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ControlModuleViewHolder {
             val view = LayoutInflater.from(parent.context).inflate(R.layout.item_control_module, parent, false)
@@ -249,19 +250,30 @@ class ClientDashboard : Fragment() {
         override fun onBindViewHolder(holder: ControlModuleViewHolder, position: Int) {
             val module = modules[position]
             val isSwitch = module.moduleType.equals("Switch", ignoreCase = true)
+            val managedDevice = module.deviceList.firstOrNull { it.managerID.isNotBlank() }
+            val endpointState = managedDevice?.managedEndpointState(managersById)
+                ?: ManagedEndpointState.AVAILABLE
             holder.type.text = if (isSwitch) "ROOM CONTROL" else "LIVE SENSORS"
             holder.title.text = module.moduleTitle.ifBlank { "Untitled module" }
-            holder.description.text = module.description
-            holder.description.isVisible = module.description.isNotBlank()
+            holder.description.text = buildString {
+                append(module.description)
+                if (endpointState != ManagedEndpointState.AVAILABLE) {
+                    if (isNotEmpty()) append("\n")
+                    append(endpointState.label).append(" · ").append(endpointState.explanation)
+                }
+            }
+            holder.description.isVisible = holder.description.text.isNotBlank()
             holder.readings.removeAllViews()
             holder.readings.isVisible = !isSwitch
             holder.switchArea.isVisible = isSwitch
 
             if (isSwitch) {
-                bindSwitch(holder, module)
+                bindSwitch(holder, module, endpointState)
             } else {
                 val devices = module.deviceList.filter { it.type != DeviceType.SWITCH }
-                if (devices.isEmpty()) {
+                if (endpointState != ManagedEndpointState.AVAILABLE) {
+                    holder.readings.addView(createUnavailableReading(holder.itemView.context, endpointState))
+                } else if (devices.isEmpty()) {
                     holder.readings.addView(createEmptyReading(holder.itemView.context))
                 } else {
                     devices.take(5).forEach { holder.readings.addView(createReadingRow(holder.itemView.context, it)) }
@@ -272,19 +284,25 @@ class ClientDashboard : Fragment() {
             }
         }
 
-        private fun bindSwitch(holder: ControlModuleViewHolder, module: Module) {
+        private fun bindSwitch(
+            holder: ControlModuleViewHolder,
+            module: Module,
+            endpointState: ManagedEndpointState
+        ) {
             val isPending = module.id in pending
             val endpointConfigured = module.deviceList.any { it.ipAddress.isNotBlank() }
+            val endpointAvailable = endpointState == ManagedEndpointState.AVAILABLE
             val enabled = module.value >= 0.5
             val onColor = MaterialColors.getColor(holder.switchState, com.google.android.material.R.attr.colorTertiary)
             val offColor = MaterialColors.getColor(holder.switchState, com.google.android.material.R.attr.colorOnSurfaceVariant)
 
             holder.switchControl.setOnCheckedChangeListener(null)
             holder.switchControl.isChecked = enabled
-            holder.switchControl.isEnabled = endpointConfigured && !isPending
+            holder.switchControl.isEnabled = endpointConfigured && endpointAvailable && !isPending
             holder.switchProgress.isVisible = isPending
             holder.switchState.text = when {
                 !endpointConfigured -> "Endpoint required"
+                !endpointAvailable -> endpointState.label
                 isPending -> "Sending…"
                 enabled -> "On"
                 else -> "Off"
@@ -301,6 +319,7 @@ class ClientDashboard : Fragment() {
         fun submit(items: List<Module>, pendingModuleIds: Set<String>) {
             modules = items.sortedBy { it.displayOrder }
             pending = pendingModuleIds.toSet()
+            managersById = ManagerDiscovery.snapshot().associateBy { it.managerId }
             notifyDataSetChanged()
         }
     }
@@ -324,7 +343,10 @@ class ClientDashboard : Fragment() {
             setPadding(0, (5 * density).toInt(), 0, (5 * density).toInt())
 
             addView(TextView(context).apply {
-                text = device.name.ifBlank { readableSensorName(device.type) }
+                val sensorName = device.name.ifBlank { readableSensorName(device.type) }
+                text = device.sourceDeviceName.takeIf { it.isNotBlank() }
+                    ?.let { "$sensorName · $it" }
+                    ?: sensorName
                 textSize = 11f
                 maxLines = 1
                 ellipsize = TextUtils.TruncateAt.END
@@ -347,6 +369,15 @@ class ClientDashboard : Fragment() {
         text = "No sensors assigned"
         textSize = 12f
         setTextColor(MaterialColors.getColor(this, com.google.android.material.R.attr.colorOnSurfaceVariant))
+    }
+
+    private fun createUnavailableReading(
+        context: Context,
+        endpointState: ManagedEndpointState
+    ): View = TextView(context).apply {
+        text = endpointState.label
+        textSize = 12f
+        setTextColor(ContextCompat.getColor(context, R.color.manager_offline))
     }
 
     private fun createOverflowReading(context: Context, count: Int): View = TextView(context).apply {

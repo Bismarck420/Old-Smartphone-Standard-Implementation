@@ -164,9 +164,15 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
     }
 
     fun updateUIfromDB() {
-        lifecycleScope.launch(Dispatchers.IO) {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 projectDao.getAllWithModules().collect { projectsWithModules ->
+                    val isReadOnlyMode = PreferenceManager.getDefaultSharedPreferences(requireContext())
+                        .getString("deviceMode", "host") != "host"
+                    if (isReadOnlyMode) {
+                        Log.d("ProjectView", "Ignored Room update outside Host mode")
+                        return@collect
+                    }
                     Log.d("test", "Collecting projects: " + projectsWithModules.size.toString())
                     
                     val fullProjects = projectsWithModules.map { pwm ->
@@ -179,9 +185,13 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
                         p
                     }
 
-                    // Atomic update of global list
-                    ProjectManager.projectList.clear()
-                    ProjectManager.projectList.addAll(fullProjects)
+                    if (PreferenceManager.getDefaultSharedPreferences(requireContext())
+                            .getString("deviceMode", "host") != "host"
+                    ) {
+                        Log.d("ProjectView", "Discarded Room projects after leaving Host mode")
+                        return@collect
+                    }
+                    ProjectManager.replaceProjects(fullProjects)
 
                     withContext(Dispatchers.Main){
                         projectAdapter.submit(fullProjects)
@@ -207,13 +217,14 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         fun setEditMode(enabled: Boolean) {
             if (enabled) {
-                expandedBeforeEditing = itemProjectBinding.projectDescription.isVisible
+                expandedBeforeEditing = itemProjectBinding.moduleSummary.isVisible
                 itemProjectBinding.editableProjectTitle.setText(project.name)
                 itemProjectBinding.editableProjectDescription.setText(project.description)
             }
 
             itemProjectBinding.projectTitle.isVisible = !enabled
-            itemProjectBinding.projectDescription.isVisible = !enabled && expandedBeforeEditing
+            itemProjectBinding.projectDescription.isVisible =
+                !enabled && expandedBeforeEditing && project.description.isNotBlank()
             itemProjectBinding.moduleSummary.isVisible = !enabled && expandedBeforeEditing
             itemProjectBinding.openProjectButton.isVisible = !enabled && expandedBeforeEditing
             itemProjectBinding.verticalMenu.isVisible = !enabled
@@ -261,8 +272,8 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
 
         itemProjectBinding.projectCard.setOnClickListener {
             if (itemProjectBinding.editableProjectTitle.isVisible) return@setOnClickListener
-            val detailsVisible = itemProjectBinding.projectDescription.isVisible
-            itemProjectBinding.projectDescription.isVisible = !detailsVisible
+            val detailsVisible = itemProjectBinding.moduleSummary.isVisible
+            itemProjectBinding.projectDescription.isVisible = !detailsVisible && project.description.isNotBlank()
             itemProjectBinding.moduleSummary.isVisible = !detailsVisible
             itemProjectBinding.openProjectButton.isVisible = !detailsVisible
         }
@@ -468,6 +479,9 @@ class ProjectViewFragment : Fragment(R.layout.fragment_project_view) {
             holder.binding.apply {
                 projectTitle.text = project.name
                 projectDescription.text = project.description
+                projectDescription.isVisible = false
+                moduleSummary.isVisible = false
+                openProjectButton.isVisible = false
                 renderModuleBadges(this, project)
                 projectCard.strokeWidth = 0
                 root.alpha = 1f

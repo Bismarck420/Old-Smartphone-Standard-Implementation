@@ -33,6 +33,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -43,7 +44,10 @@ import kotlinx.serialization.Serializable
 import java.io.InputStream
 
 @Serializable
-data class ProjectsResponse(val projects: List<Project>)
+data class ProjectsResponse(
+    val projects: List<Project>,
+    val sourceDeviceId: String = ""
+)
 
 @Serializable
 data class ToggleRequest(val projectId: String, val moduleId: String, val value: Boolean)
@@ -51,8 +55,14 @@ data class ToggleRequest(val projectId: String, val moduleId: String, val value:
 @Serializable
 data class SensorValuesPayload(val values: Map<String, List<Float>>)
 
+@Serializable
+data class ManagersResponse(val managers: List<AdvertisedManager>)
+
 object KtorServer {
     private const val TAG = "KtorServer"
+    private const val SENSOR_TAG = "SensorStream"
+    private const val SENSOR_BATCH_INTERVAL_MS = 120L
+    private const val SENSOR_RETRY_DELAY_MS = 500L
 
     private var client: HttpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
@@ -73,12 +83,28 @@ object KtorServer {
 
     private var sensorData = ""
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val activeHostSensors = mutableMapOf<String, MeasureableSensor>()
     private val activeClientSensors = mutableMapOf<String, MeasureableSensor>()
+    private val sensorUploadLock = Any()
+    private val pendingSensorValues = mutableMapOf<String, List<Float>>()
+    private var sensorUploadJob: Job? = null
     @Volatile private var lastProjectSyncAt: Long = 0L
 
     fun isRunning(): Boolean = serverJob?.isActive == true
     fun activeClientSensorCount(): Int = activeClientSensors.size
     fun lastProjectSyncTimestamp(): Long = lastProjectSyncAt
+
+    /** Clears Host-era in-memory data when the user explicitly switches this device to Client mode. */
+    fun resetForClientMode() {
+        stopHostSensorListeners()
+        mainHandler.post {
+            activeClientSensors.values.forEach { it.stopListening() }
+            activeClientSensors.clear()
+        }
+        ProjectManager.clearProjects()
+        lastProjectSyncAt = 0L
+        Log.d(TAG, "Client project state reset; waiting for Host synchronization")
+    }
 
     /** Executes a room-control action directly from the native client dashboard. */
     suspend fun controlClientSwitch(moduleId: String, enabled: Boolean): Result<Int> = runCatching {
@@ -87,6 +113,9 @@ object KtorServer {
             .firstOrNull { it.id == moduleId }
             ?: error("Switch module is no longer available")
 
+        managedEndpointFailure(module.deviceList)?.let { (_, state) ->
+            error(state.explanation)
+        }
         val targetCount = sendSwitchCommand(module.deviceList, enabled)
         if (targetCount == 0) error("No ESP8266 endpoint configured")
         module.value = if (enabled) 1.0 else 0.0
@@ -95,6 +124,7 @@ object KtorServer {
 
     fun startServer(context: Context) {
         if (serverJob != null) return
+        ManagerDiscovery.start()
         serverJob = serverScope.launch {
             try {
                 Log.d("test", "server starting")
@@ -119,9 +149,21 @@ object KtorServer {
                         post("/syncProjects") {
                             try {
                                 val response = call.receive<ProjectsResponse>()
+                                val deviceMode = PreferenceManager.getDefaultSharedPreferences(context)
+                                    .getString("deviceMode", "host")
+                                if (deviceMode != "client") {
+                                    call.respondText("Project sync is only accepted in Client mode", status = HttpStatusCode.Conflict)
+                                    return@post
+                                }
+                                if (response.sourceDeviceId.isNotBlank() &&
+                                    response.sourceDeviceId == DeviceIdentity.id(context)
+                                ) {
+                                    Log.w(TAG, "Rejected project sync originating from this Client device")
+                                    call.respondText("Self-originated project sync rejected", status = HttpStatusCode.Conflict)
+                                    return@post
+                                }
                                 Log.d(TAG, "Received ${response.projects.size} projects via /syncProjects")
-                                ProjectManager.projectList.clear()
-                                ProjectManager.projectList.addAll(response.projects)
+                                ProjectManager.replaceProjects(response.projects)
                                 lastProjectSyncAt = System.currentTimeMillis()
                                 startClientSensorListeners(context)
                                 call.respondText("Projects synced")
@@ -134,8 +176,18 @@ object KtorServer {
                         post("/sensor-values") {
                             try {
                                 val payload = call.receive<SensorValuesPayload>()
-                                payload.values.forEach { (deviceId, values) ->
-                                    ProjectManager.updateSensorValues(deviceId, values)
+                                val unknownDeviceIds = payload.values.mapNotNull { (deviceId, values) ->
+                                    deviceId.takeUnless {
+                                        ProjectManager.updateSensorValues(deviceId, values)
+                                    }
+                                }
+                                if (unknownDeviceIds.isEmpty()) {
+                                    Log.v(SENSOR_TAG, "Client applied ${payload.values.size} sensor value(s)")
+                                } else {
+                                    Log.w(
+                                        SENSOR_TAG,
+                                        "Client ignored values for unknown sensor IDs: ${unknownDeviceIds.joinToString()}"
+                                    )
                                 }
                                 call.respondText("Sensor values synced")
                             } catch (e: Exception) {
@@ -171,17 +223,37 @@ object KtorServer {
                             try {
                                 val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
                                 val deviceSensors = sensorManager.getSensorList(Sensor.TYPE_ALL)
+                                val sourceDeviceId = DeviceIdentity.id(context)
+                                val sourceDeviceName = DeviceIdentity.name()
                                 call.respond(deviceSensors.map { sensor ->
                                     AndroidSensorDescriptor(
                                         name = sensor.name,
                                         sensorType = sensor.type,
-                                        type = DeviceType.fromAndroidSensorType(sensor.type)
+                                        type = DeviceType.fromAndroidSensorType(sensor.type),
+                                        sourceDeviceId = sourceDeviceId,
+                                        sourceDeviceName = sourceDeviceName
                                     )
                                 })
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to get sensors", e)
                                 call.respondText("Error fetching sensors", status = HttpStatusCode.InternalServerError)
                             }
+                        }
+
+                        get("/managers") {
+                            val deviceMode = PreferenceManager.getDefaultSharedPreferences(context)
+                                .getString("deviceMode", "default")
+                            if (deviceMode != "client") {
+                                call.respondText("Manager discovery is only available on a Client device", status = HttpStatusCode.Conflict)
+                                return@get
+                            }
+                            val managers = ManagerDiscovery.snapshot()
+                            val invalidated = ProjectManager.reconcileManagerInventory(managers)
+                            if (invalidated > 0) {
+                                Log.i(TAG, "Cleared stale values for $invalidated removed manager channel(s)")
+                            }
+                            Log.v(TAG, "GET /managers returning ${managers.size} manager(s)")
+                            call.respond(ManagersResponse(managers))
                         }
 
                         get("/") {
@@ -198,11 +270,18 @@ object KtorServer {
                                 val deviceMode = sharedPreferences.getString("deviceMode", "default")
                                 
                                 if (deviceMode == "client") {
-                                    call.respond(ProjectsResponse(ProjectManager.projectList.toList()))
+                                    val synchronizedProjects = if (lastProjectSyncAt == 0L) {
+                                        emptyList()
+                                    } else {
+                                        ProjectManager.projectsSnapshot()
+                                    }
+                                    call.respond(ProjectsResponse(synchronizedProjects))
+                                } else if (deviceMode == "viewer") {
+                                    call.respond(ProjectsResponse(emptyList()))
                                 } else {
                                     // Host serves the website: we MUST provide the modules and devices
                                     // We use the in-memory list as it's the most up-to-date for live sensors
-                                    call.respond(ProjectsResponse(ProjectManager.projectList.toList()))
+                                    call.respond(ProjectsResponse(ProjectManager.projectsSnapshot()))
                                 }
                             } catch (e: Exception) {
                                 Log.e(TAG, "Error in /projects.json", e)
@@ -252,6 +331,7 @@ object KtorServer {
     }
 
     fun stopServer() {
+        ManagerDiscovery.stop()
         mainHandler.post {
             activeClientSensors.values.forEach { it.stopListening() }
             activeClientSensors.clear()
@@ -269,11 +349,17 @@ object KtorServer {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         if (preferences.getString("deviceMode", "default") != "client") return
 
-        val devices = ProjectManager.projectList
+        val applicationContext = context.applicationContext
+        val localDeviceId = DeviceIdentity.id(applicationContext)
+        val devices = ProjectManager.projectsSnapshot()
             .asSequence()
             .flatMap { it.moduleList.asSequence() }
             .flatMap { it.deviceList.asSequence() }
             .filter { it.connectionType == ConnectionType.ANDROID }
+            .filter { device ->
+                // Empty is the legacy representation and historically belonged to the client.
+                device.sourceDeviceId.isBlank() || device.sourceDeviceId == localDeviceId
+            }
             .associateBy { it.id }
 
         mainHandler.post {
@@ -283,15 +369,94 @@ object KtorServer {
 
             devices.forEach { (deviceId, device) ->
                 if (deviceId in activeClientSensors) return@forEach
-                DeviceFactory.create(context, device)?.let { sensor ->
+                val sensor = DeviceFactory.create(applicationContext, device)
+                if (sensor == null) {
+                    Log.w(SENSOR_TAG, "Client cannot create sensor ${device.name} ($deviceId)")
+                    return@forEach
+                }
+                if (!sensor.doesSensorExist) {
+                    Log.w(SENSOR_TAG, "Client does not provide sensor ${device.name} ($deviceId)")
+                    return@forEach
+                }
+                sensor.let {
                     sensor.setOnSensorValuesChangedListener { values ->
-                        ProjectManager.updateSensorValues(deviceId, values)
+                        if (!ProjectManager.updateSensorValues(deviceId, values)) {
+                            Log.w(SENSOR_TAG, "Client sample has no matching sensor: $deviceId")
+                        }
                     }
                     sensor.startListening()
                     activeClientSensors[deviceId] = sensor
-                    Log.d(TAG, "Started client sensor ${device.name} ($deviceId)")
+                    Log.d(SENSOR_TAG, "Started Client sensor ${device.name} ($deviceId)")
                 }
             }
+        }
+    }
+
+    /**
+     * Keeps Host-phone sensors alive independently of DetailActivity. Only sensors explicitly
+     * assigned to this Android device are sampled; Client-owned and Wi-Fi devices are excluded.
+     */
+    fun refreshHostSensorListeners(context: Context) {
+        val applicationContext = context.applicationContext
+        val preferences = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        if (preferences.getString("deviceMode", "host") != "host") {
+            stopHostSensorListeners()
+            return
+        }
+
+        val localDeviceId = DeviceIdentity.id(applicationContext)
+        val devices = ProjectManager.projectsSnapshot()
+            .asSequence()
+            .flatMap { it.moduleList.asSequence() }
+            .flatMap { it.deviceList.asSequence() }
+            .filter { it.connectionType == ConnectionType.ANDROID }
+            .filter { it.sourceDeviceId == localDeviceId }
+            .associateBy { it.id }
+
+        mainHandler.post {
+            activeHostSensors.keys.toList()
+                .filter { it !in devices }
+                .forEach { deviceId ->
+                    activeHostSensors.remove(deviceId)?.stopListening()
+                    Log.d(SENSOR_TAG, "Stopped removed Host sensor $deviceId")
+                }
+
+            devices.forEach { (deviceId, device) ->
+                if (deviceId in activeHostSensors) return@forEach
+                val sensor = DeviceFactory.create(applicationContext, device)
+                if (sensor == null) {
+                    Log.w(SENSOR_TAG, "Host cannot create sensor ${device.name} ($deviceId)")
+                    return@forEach
+                }
+                if (!sensor.doesSensorExist) {
+                    Log.w(SENSOR_TAG, "Host does not provide sensor ${device.name} ($deviceId)")
+                    return@forEach
+                }
+
+                sensor.setOnSensorValuesChangedListener { values ->
+                    if (ProjectManager.updateSensorValues(deviceId, values)) {
+                        syncSensorValuesToClient(applicationContext, deviceId, values)
+                    } else {
+                        Log.w(SENSOR_TAG, "Host sample has no matching sensor: $deviceId")
+                    }
+                }
+                sensor.startListening()
+                activeHostSensors[deviceId] = sensor
+                Log.d(SENSOR_TAG, "Started Host sensor ${device.name} ($deviceId)")
+            }
+        }
+    }
+
+    fun stopHostSensorListeners() {
+        synchronized(sensorUploadLock) {
+            pendingSensorValues.clear()
+            sensorUploadJob?.cancel()
+            sensorUploadJob = null
+        }
+        mainHandler.post {
+            activeHostSensors.values.forEach { it.stopListening() }
+            activeHostSensors.clear()
+            Log.d(SENSOR_TAG, "Stopped all Host sensors")
         }
     }
 
@@ -308,30 +473,96 @@ object KtorServer {
         }
     }
 
+    suspend fun fetchAdvertisedManagers(
+        context: Context,
+        logResult: Boolean = true
+    ): Result<List<AdvertisedManager>> {
+        val result = ClientEndpointResolver.withFallback(context) { endpoint ->
+            if (logResult) {
+                Log.d(TAG, "Fetching managers from Client ${endpoint.address} via ${endpoint.transport}")
+            }
+            client.get("http://${endpoint.address}:8080/managers").body<ManagersResponse>().managers
+        }
+        if (logResult) {
+            result.onSuccess { Log.d(TAG, "Host received ${it.size} advertised manager(s)") }
+                .onFailure { Log.e(TAG, "Host failed to fetch advertised managers", it) }
+        }
+        return result
+    }
+
     fun syncProjectsToClient(context: Context) {
+        val deviceMode = PreferenceManager.getDefaultSharedPreferences(context)
+            .getString("deviceMode", "host")
+        if (deviceMode != "host") {
+            Log.d(TAG, "Ignored project upload from $deviceMode mode")
+            return
+        }
+        refreshHostSensorListeners(context)
         clientScope.launch {
-            val activeProjects = ProjectManager.projectList.toList()
+            val activeProjects = ProjectManager.projectsSnapshot()
             val result = ClientEndpointResolver.withFallback(context) { endpoint ->
                 Log.d(TAG, "Syncing projects through ${endpoint.transport}: ${endpoint.address}")
                 client.post("http://${endpoint.address}:8080/syncProjects") {
                     contentType(ContentType.Application.Json)
-                    setBody(ProjectsResponse(activeProjects))
+                    setBody(ProjectsResponse(activeProjects, DeviceIdentity.id(context)))
                 }
             }
-            result.exceptionOrNull()?.let { Log.e(TAG, "Failed to sync projects to client", it) }
+            result.onSuccess {
+                // Re-send every latest sample after the Client knows the device IDs. This closes
+                // the startup race for slow or one-shot sensors whose first value arrived early.
+                ProjectManager.sensorValuesSnapshot().forEach { (deviceId, values) ->
+                    syncSensorValuesToClient(context, deviceId, values)
+                }
+            }.onFailure { failure ->
+                Log.e(TAG, "Failed to sync projects to client", failure)
+            }
         }
     }
 
-    /** Sends only changing sensor samples; project structure is deliberately not touched. */
+    /**
+     * Keeps the latest sample per sensor and sends all pending sensors as one small batch. This
+     * avoids one fast sensor starving the others or creating a new HTTP request for every event.
+     */
     fun syncSensorValuesToClient(context: Context, deviceId: String, values: List<Float>) {
-        clientScope.launch {
+        val applicationContext = context.applicationContext
+        synchronized(sensorUploadLock) {
+            pendingSensorValues[deviceId] = values.toList()
+            if (sensorUploadJob?.isActive != true) {
+                sensorUploadJob = clientScope.launch {
+                    drainPendingSensorValues(applicationContext)
+                }
+            }
+        }
+    }
+
+    private suspend fun drainPendingSensorValues(context: Context) {
+        while (true) {
+            delay(SENSOR_BATCH_INTERVAL_MS)
+            val batch = synchronized(sensorUploadLock) {
+                if (pendingSensorValues.isEmpty()) {
+                    sensorUploadJob = null
+                    return
+                }
+                pendingSensorValues.toMap().also { pendingSensorValues.clear() }
+            }
+
             val result = ClientEndpointResolver.withFallback(context) { endpoint ->
                 client.post("http://${endpoint.address}:8080/sensor-values") {
                     contentType(ContentType.Application.Json)
-                    setBody(SensorValuesPayload(mapOf(deviceId to values)))
+                    setBody(SensorValuesPayload(batch))
                 }
             }
-            result.exceptionOrNull()?.let { Log.w(TAG, "Failed to sync sensor values", it) }
+            result.onSuccess {
+                Log.v(SENSOR_TAG, "Host uploaded ${batch.size} sensor value(s)")
+            }.onFailure { failure ->
+                synchronized(sensorUploadLock) {
+                    batch.forEach { (deviceId, values) ->
+                        pendingSensorValues.putIfAbsent(deviceId, values)
+                    }
+                }
+                Log.w(SENSOR_TAG, "Sensor upload failed; latest values queued for retry", failure)
+                delay(SENSOR_RETRY_DELAY_MS)
+            }
         }
     }
 
@@ -362,6 +593,11 @@ object KtorServer {
                     .firstOrNull { it.id == request.moduleId }
                 if (module == null) {
                     call.respondText("Module not found", status = HttpStatusCode.NotFound)
+                    return
+                }
+
+                managedEndpointFailure(module.deviceList)?.let { (_, state) ->
+                    call.respondText(state.explanation, status = HttpStatusCode.ServiceUnavailable)
                     return
                 }
 
@@ -398,15 +634,9 @@ object KtorServer {
     }
 
     private suspend fun sendSwitchCommand(devices: List<DeviceEntity>, enabled: Boolean): Int {
-        val targets = devices.mapNotNull { device ->
-            device.ipAddress.trim().takeIf { it.isNotEmpty() }
-        }
-        targets.forEach { address ->
-            val targetUrl = if (address.startsWith("http://") || address.startsWith("https://")) {
-                address
-            } else {
-                "http://$address/relay"
-            }
+        val managersById = ManagerDiscovery.snapshot().associateBy { it.managerId }
+        val targets = devices.mapNotNull { device -> resolveSwitchTarget(device, managersById) }
+        targets.forEach { targetUrl ->
             Log.d(TAG, "Sending switch command to $targetUrl")
             client.post(targetUrl) {
                 contentType(ContentType.Application.Json)
@@ -414,6 +644,39 @@ object KtorServer {
             }
         }
         return targets.size
+    }
+
+    private fun resolveSwitchTarget(
+        device: DeviceEntity,
+        managersById: Map<String, AdvertisedManager>
+    ): String? {
+        val manager = managersById[device.managerID]
+        val peripheralId = device.effectiveManagerPeripheralId()
+        val advertised = manager?.devices?.firstOrNull { it.id == peripheralId }
+        if (manager != null && advertised != null) {
+            val path = advertised.endpointPath.trim().ifBlank { "/relay" }
+            if (path.startsWith("http://") || path.startsWith("https://")) return path
+            return "http://${manager.endpoint}/${path.trimStart('/')}"
+        }
+
+        val address = device.ipAddress.trim().takeIf { it.isNotEmpty() } ?: return null
+        return if (address.startsWith("http://") || address.startsWith("https://")) {
+            address
+        } else {
+            "http://$address/relay"
+        }
+    }
+
+    private fun managedEndpointFailure(
+        devices: List<DeviceEntity>
+    ): Pair<DeviceEntity, ManagedEndpointState>? {
+        val managedDevices = devices.filter { it.managerID.isNotBlank() }
+        if (managedDevices.isEmpty()) return null
+        val managersById = ManagerDiscovery.snapshot().associateBy { it.managerId }
+        return managedDevices.firstNotNullOfOrNull { device ->
+            val state = device.managedEndpointState(managersById)
+            if (state == ManagedEndpointState.AVAILABLE) null else device to state
+        }
     }
 
     private suspend fun io.ktor.server.application.ApplicationCall.respondDashboardIndex(context: Context) {

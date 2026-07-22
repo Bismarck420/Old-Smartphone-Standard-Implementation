@@ -7,6 +7,7 @@
     <color name="label_color">#6A1B9A</color>
     <color name="client_color">#00b8ff</color>
     <color name="host_color">#FF3D00</color>
+    <color name="viewer_color">#8B7CFF</color>
     <color name="online_back_color">#388E3C</color>
     <color name="online_front_color">#81C784</color>
     <color name="selected_back_color">#002111</color>
@@ -18,5 +19,8 @@
     <color name="switch_card_stroke">#373737</color>
     <color name="switch_badge_background">#FFE3BA</color>
     <color name="switch_badge_text">#8A4B00</color>
+    <color name="manager_online">#31C48D</color>
+    <color name="manager_offline">#F05265</color>
+    <color name="manager_unknown">#8B96A8</color>
 
 </resources>

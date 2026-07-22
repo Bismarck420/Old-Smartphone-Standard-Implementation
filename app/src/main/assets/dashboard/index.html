@@ -3,22 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>OSSI Dashboard</title>
+    <title>OSSI</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <link rel="stylesheet" href="assets/index-CS0beFyh.css">
     <style>
         :root {
             color-scheme: dark;
-            --background: #0b0e13;
-            --sidebar: #10141b;
-            --surface: #151b24;
-            --surface-soft: #1b222e;
-            --text: #f3f5f8;
-            --muted: #8b96a8;
-            --accent: #70a7ff;
-            --accent-soft: rgba(112, 167, 255, .12);
-            --success: #75d9ad;
-            --warning: #f2b35f;
+            --background: #0d1015;
+            --sidebar: #10141a;
+            --surface: #151a22;
+            --text: #f4f6f9;
+            --muted: #8993a3;
+            --accent: #67a3ff;
+            --accent-soft: rgba(103, 163, 255, .12);
+            --success: #52d6a0;
+            --warning: #ffad4d;
+            --sensor-blue: #72b7ff;
+            --sensor-mint: #56d9b0;
+            --sensor-violet: #aa8cff;
+            --sensor-coral: #ff8a78;
         }
 
         * { box-sizing: border-box; }
@@ -27,72 +30,83 @@
         body { background: var(--background) !important; color: var(--text); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
         button { color: inherit; font: inherit; }
 
-        .app-shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); width: 100%; height: 100vh; height: 100dvh; overflow: hidden; }
-        .app-sidebar { min-height: 0; padding: 1.2rem .8rem; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; background: var(--sidebar); scrollbar-color: rgba(112,167,255,.35) transparent; scrollbar-width: thin; }
+        .app-shell { display: grid; grid-template-columns: 164px minmax(0, 1fr); width: 100%; height: 100vh; height: 100dvh; overflow: hidden; }
+        .app-sidebar { min-height: 0; padding: 1rem .65rem; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; background: var(--sidebar); scrollbar-color: rgba(103,163,255,.3) transparent; scrollbar-width: thin; }
         .app-sidebar::-webkit-scrollbar, .project-list::-webkit-scrollbar { width: 4px; height: 4px; }
         .app-sidebar::-webkit-scrollbar-thumb, .project-list::-webkit-scrollbar-thumb { border-radius: 99px; background: rgba(112,167,255,.35); }
-        .brand { display: flex; align-items: center; gap: .7rem; padding: .25rem .55rem 1.5rem; }
-        .brand__mark { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: .65rem; background: var(--accent); color: #07101d; font-size: .82rem; font-weight: 900; }
-        .brand strong { font-size: .9rem; letter-spacing: .04em; }
-        .sidebar-label { padding: 0 .65rem .55rem; color: #667287; font-size: .58rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-        .project-list { display: flex; flex-direction: column; gap: .2rem; }
-        .project-nav-item { display: flex; min-height: 44px; align-items: center; gap: .65rem; width: 100%; padding: .65rem .7rem; border: 0; border-radius: .7rem; background: transparent; color: var(--muted); cursor: pointer; touch-action: manipulation; text-align: left; transition: background .16s ease, color .16s ease; }
+        .brand { padding: .2rem .65rem 1rem; }
+        .brand strong { color: var(--accent); font-size: .78rem; font-weight: 760; letter-spacing: .16em; }
+        .project-list { display: flex; flex-direction: column; gap: .15rem; }
+        .project-nav-item { display: block; min-height: 42px; width: 100%; padding: .65rem .7rem; overflow: hidden; border: 0; border-radius: .55rem; background: transparent; color: var(--muted); cursor: pointer; touch-action: manipulation; text-align: left; text-overflow: ellipsis; white-space: nowrap; transition: background .16s ease, color .16s ease; }
         .project-nav-item:hover { background: rgba(255,255,255,.035); color: var(--text); }
-        .project-nav-item--active { background: var(--accent-soft); color: #dce9ff; }
-        .project-nav-item__mark { width: .38rem; height: .38rem; flex: 0 0 auto; border-radius: 50%; background: #4d586a; }
-        .project-nav-item--active .project-nav-item__mark { background: var(--accent); }
+        .project-nav-item--active { background: var(--accent-soft); color: #cfe0ff; }
 
         .app-main { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
-        .app-header { display: flex; min-height: 72px; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.5rem; }
+        .app-header { display: flex; min-height: 68px; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem 1.35rem .6rem; }
+        .project-heading { min-width: 0; }
         .app-header h1 { margin: 0; overflow: hidden; font-size: clamp(1.25rem, 2vw, 1.55rem); font-weight: 720; letter-spacing: -.035em; text-overflow: ellipsis; white-space: nowrap; }
-        .live-state { display: flex; flex: 0 0 auto; align-items: center; gap: .45rem; padding: .4rem .65rem; border-radius: 99px; background: rgba(117,217,173,.09); color: var(--success); font-size: .67rem; font-weight: 750; }
+        .project-heading__meta { display: block; margin-top: .2rem; color: #657185; font-size: .65rem; }
+        .live-state { display: flex; flex: 0 0 auto; align-items: center; gap: .45rem; color: var(--success); font-size: .65rem; font-weight: 700; }
         .live-state__dot { width: .38rem; height: .38rem; border-radius: 50%; background: currentColor; }
-        .live-state--offline { background: rgba(244,114,135,.09); color: #ef8da1; }
+        .live-state--offline { color: #ef8da1; }
 
-        .dashboard-content { display: flex; flex-direction: column; gap: 1rem; padding: .7rem 1.5rem 2rem; }
-        .section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: .65rem; }
-        .section-heading h2 { margin: 0; font-size: .78rem; font-weight: 700; }
-        .section-heading span { color: #657185; font-size: .65rem; }
-        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: .85rem; }
-        .dashboard-card { min-width: 0; min-height: 142px; padding: 1rem; border: 0; border-radius: 1rem; background: var(--surface); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
-        .dashboard-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; margin-bottom: .8rem; }
-        .dashboard-card__eyebrow { display: block; margin-bottom: .2rem; color: var(--accent); font-size: .56rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-        .dashboard-card--switch .dashboard-card__eyebrow { color: var(--warning); }
-        .dashboard-card__title { margin: 0; color: var(--text); font-size: 1rem; font-weight: 700; }
+        .dashboard-content { display: flex; flex-direction: column; gap: .75rem; padding: .55rem 1.35rem 1.5rem; }
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .6rem; }
+        .dashboard-card { min-width: 0; min-height: 116px; padding: .9rem 1rem; border: 1px solid rgba(255,255,255,.045); border-radius: .65rem; background: var(--surface); }
+        .dashboard-card--switch { border-color: rgba(255,173,77,.13); }
+        .dashboard-card__header { display: flex; align-items: flex-start; justify-content: space-between; gap: .8rem; margin-bottom: .7rem; }
+        .dashboard-card__title { margin: 0; color: #cfe0ff; font-size: .9rem; font-weight: 680; }
+        .dashboard-card--switch .dashboard-card__title { color: #f5d3a4; }
+        .dashboard-card__manager-meta { display: flex; flex: 0 0 auto; align-items: center; gap: .4rem; }
+        .dashboard-card__manager-state { padding: .2rem .42rem; border-radius: 99px; font-size: .52rem; font-weight: 760; letter-spacing: .035em; text-transform: uppercase; }
+        .dashboard-card__manager-state--online { background: rgba(82,214,160,.1); color: var(--success); }
+        .dashboard-card__manager-state--offline { background: rgba(240,82,101,.11); color: #f05265; }
+        .dashboard-card__manager-state--removed, .dashboard-card__manager-state--changed { background: rgba(240,82,101,.11); color: #f05265; }
+        .dashboard-card__manager-state--unknown { background: rgba(139,150,168,.1); color: #8b96a8; }
+        .dashboard-card__manager-icon { display: grid; width: 1.65rem; height: 1.65rem; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--accent-soft); color: #85b5ff; }
+        .dashboard-card__manager-icon svg { width: .9rem; height: .9rem; }
+        .dashboard-card--switch .dashboard-card__manager-icon { background: rgba(255,173,77,.11); color: #efad5c; }
         .dashboard-card__empty, .dashboard-empty { margin: .4rem 0 0; color: var(--muted); font-size: .78rem; }
-        .dashboard-empty { grid-column: 1 / -1; padding: 2.5rem 1rem; border-radius: 1rem; background: var(--surface); text-align: center; }
+        .dashboard-empty { grid-column: 1 / -1; padding: 2.5rem .25rem; text-align: center; }
 
-        .dashboard-device-list { display: flex; flex-direction: column; }
-        .dashboard-device { padding: .65rem 0; border-bottom: 1px solid rgba(255,255,255,.055); }
-        .dashboard-device:last-child { padding-bottom: 0; border-bottom: 0; }
+        .dashboard-device-list { display: flex; flex-direction: column; gap: .9rem; }
+        .dashboard-device { padding: 0; }
+        .dashboard-device--unavailable .dashboard-device__name { color: #8b6670; }
+        .dashboard-device:last-child { padding-bottom: 0; }
         .dashboard-device:first-child { padding-top: 0; }
         .dashboard-device__header { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-        .dashboard-device__name { display: flex; min-width: 0; align-items: center; gap: .45rem; color: var(--muted); font-size: .62rem; font-weight: 700; text-transform: uppercase; }
-        .dashboard-device__name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .dashboard-icon { width: .9rem; height: .9rem; flex: 0 0 auto; color: var(--accent); }
-        .dashboard-reading__value { margin-top: .35rem; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1.45rem; font-weight: 720; letter-spacing: -.055em; }
+        .dashboard-device__name { min-width: 0; overflow: hidden; color: var(--muted); font-size: .68rem; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+        .dashboard-reading__value { margin-top: .2rem; color: var(--sensor-blue); font-variant-numeric: tabular-nums; font-size: 1.4rem; font-weight: 690; letter-spacing: -.045em; }
         .dashboard-reading__value span { margin-left: .3rem; color: var(--muted); font-size: .68rem; font-weight: 600; letter-spacing: 0; }
-        .dashboard-vector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .35rem; margin-top: .4rem; }
-        .dashboard-vector__item { min-width: 0; padding: .38rem .25rem; border-radius: .5rem; background: var(--surface-soft); color: var(--muted); font-size: .54rem; font-weight: 700; text-align: center; text-transform: uppercase; }
-        .dashboard-vector__item strong { display: block; margin-top: .12rem; overflow: hidden; color: #c9dcff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .72rem; text-overflow: ellipsis; }
-        .graph-button { display: flex; min-width: 36px; min-height: 36px; align-items: center; justify-content: center; border: 0; border-radius: .55rem; background: transparent; color: #657185; cursor: pointer; touch-action: manipulation; }
+        .dashboard-vector { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-top: .35rem; }
+        .dashboard-vector__item { min-width: 0; color: #667287; font-size: .55rem; font-weight: 650; text-transform: uppercase; }
+        .dashboard-vector__item strong { display: block; margin-top: .12rem; overflow: hidden; color: var(--sensor-blue); font-variant-numeric: tabular-nums; font-size: .78rem; font-weight: 650; text-overflow: ellipsis; }
+        .dashboard-vector__item:nth-child(4n + 2) strong { color: var(--sensor-mint); }
+        .dashboard-vector__item:nth-child(4n + 3) strong { color: var(--sensor-violet); }
+        .dashboard-vector__item:nth-child(4n + 4) strong { color: var(--sensor-coral); }
+        .dashboard-endpoint-unavailable { margin-top: .35rem; color: #f05265; font-size: .68rem; font-weight: 720; }
+        .dashboard-device:nth-child(4n + 2) .dashboard-reading__value { color: var(--sensor-mint); }
+        .dashboard-device:nth-child(4n + 3) .dashboard-reading__value { color: var(--sensor-violet); }
+        .dashboard-device:nth-child(4n + 4) .dashboard-reading__value { color: var(--sensor-coral); }
+        .graph-button { display: flex; min-width: 32px; min-height: 32px; align-items: center; justify-content: center; border: 0; border-radius: .5rem; background: transparent; color: #5f6979; cursor: pointer; touch-action: manipulation; }
         .graph-button span { display: none; }
         .graph-button svg { width: .95rem; height: .95rem; }
         .graph-button:hover, .graph-button--active { background: var(--accent-soft); color: var(--accent); }
 
-        .switch-control { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.35rem; }
+        .switch-control { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.1rem; }
         .switch-control__status { color: var(--muted); font-size: .82rem; font-weight: 750; }
         .switch-control__status--on { color: var(--warning); }
+        .switch-control__status--unavailable { color: #f05265; font-size: .68rem; }
         .dashboard-switch { position: relative; display: block; width: 3.1rem; height: 1.8rem; padding: .2rem; border: 0; border-radius: 99px; background: #313a48; cursor: pointer; touch-action: manipulation; transition: background .18s ease; }
         .dashboard-switch--on { background: #cc842e; }
         .dashboard-switch__knob { display: block; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: white; box-shadow: 0 2px 6px rgba(0,0,0,.28); transform: translateX(0); transition: transform .2s cubic-bezier(.2,.8,.2,1); }
         .dashboard-switch--on .dashboard-switch__knob { transform: translateX(1.3rem); }
-        .dashboard-switch:disabled { opacity: .5; cursor: progress; }
+        .dashboard-switch:disabled { opacity: .42; cursor: not-allowed; }
 
-        .timeline-panel { padding: 1rem; border-radius: 1rem; background: var(--surface); }
+        .timeline-panel { padding: 1rem 1.05rem; border-radius: .75rem; background: linear-gradient(135deg, rgba(112,167,255,.06), transparent 42%), var(--surface); }
         .timeline-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .65rem; }
-        .timeline-panel h2 { margin: 0; font-size: .82rem; }
-        .text-button { min-height: 36px; padding: .35rem .6rem; border: 0; border-radius: .5rem; background: var(--surface-soft); color: var(--muted); cursor: pointer; font-size: .64rem; }
+        .timeline-panel h2 { margin: 0; color: #cfe0ff; font-size: .82rem; }
+        .text-button { min-height: 36px; padding: .35rem .6rem; border: 0; border-radius: .5rem; background: var(--accent-soft); color: #a9c8fb; cursor: pointer; font-size: .64rem; }
         .text-button:hover { color: var(--text); }
         .chart-stage { position: relative; min-height: 230px; }
         #timeline-chart { display: block; width: 100%; height: 230px; }
@@ -112,10 +126,9 @@
             .app-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
             .app-sidebar { width: 100%; height: auto; max-height: 122px; padding: max(.55rem, env(safe-area-inset-top)) .7rem .55rem; overflow-y: auto; }
             .brand { padding: 0 .2rem .55rem; }
-            .sidebar-label { display: none; }
             .project-list { flex-direction: row; gap: .35rem; padding-bottom: .15rem; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
             .project-nav-item { min-width: max-content; min-height: 40px; padding: .5rem .65rem; scroll-snap-align: start; }
-            .app-header { min-height: 62px; padding: .7rem 1rem; }
+            .app-header { min-height: 66px; padding: .75rem 1rem .6rem; }
             .dashboard-content { padding: .55rem 1rem calc(1.4rem + env(safe-area-inset-bottom)); }
             .dashboard-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: .7rem; }
             .dashboard-card { min-height: 0; padding: .9rem; }
@@ -136,20 +149,16 @@
     <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 pointer-events-none"></div>
     <div class="app-shell">
         <aside class="app-sidebar">
-            <div class="brand"><div class="brand__mark">O</div><strong>OSSI</strong></div>
-            <div class="sidebar-label">Projects</div>
+            <div class="brand"><strong>OSSI</strong></div>
             <nav id="project-list" class="project-list"></nav>
         </aside>
         <section class="app-main">
             <header class="app-header">
-                <h1 id="project-heading">Dashboard</h1>
+                <div class="project-heading"><h1 id="project-heading">Home</h1><span id="module-count" class="project-heading__meta">0 modules</span></div>
                 <div id="live-state" class="live-state"><span class="live-state__dot"></span><span>Live</span></div>
             </header>
             <main class="dashboard-content">
-                <section>
-                    <div class="section-heading"><h2>Modules</h2><span id="module-count">0 modules</span></div>
-                    <div id="module-grid" class="dashboard-grid"><div class="dashboard-empty">Loading workspace…</div></div>
-                </section>
+                <section><div id="module-grid" class="dashboard-grid"><div class="dashboard-empty">Loading workspace…</div></div></section>
                 <section id="timeline-panel" class="timeline-panel" hidden>
                     <div class="timeline-panel__header"><h2>Timeline</h2><button id="clear-chart" class="text-button" type="button">Clear</button></div>
                     <div class="chart-stage"><canvas id="timeline-chart"></canvas><div id="chart-empty" class="chart-empty">Waiting for readings</div></div>

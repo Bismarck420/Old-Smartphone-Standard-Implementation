@@ -8,7 +8,9 @@ data class AndroidSensorDescriptor(
     val name: String,
     val sensorType: Int,
     val type: DeviceType,
-    val unit: String = SensorPresentation.unitFor(type)
+    val unit: String = SensorPresentation.unitFor(type),
+    val sourceDeviceId: String = "",
+    val sourceDeviceName: String = "Android device"
 )
 
 object SensorPresentation {
